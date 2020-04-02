@@ -219,7 +219,9 @@ En este video nos explica como podemos alterar el comportamiento de un bean dura
 -Mediante las interfaces proporcionadas por Spring, _IntialazingBean_ y _DisposableBean_ , en las cuales sobreescribimos los métodos de 
 cada una de ellas para poner nuestro código cuando el bean se inicializa y cuando se destruye.
 -Mediante XML, aquí tenemos dos opciones:
+
        * Especificar los metodos que cambian el comportamiento al inicio y destrucción en cada bean individualmente. Lo que significa que 
        el bean que querramos modificar deberá tener los métodos especificados.
+       
        * Especificar los metodos que cambian el comportamiento al inicio y destrucción para todos los beans. Lo que significa que todos los
        beans deberán tener los métodos especificados.
