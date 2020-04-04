@@ -220,8 +220,91 @@ En este video nos explica como podemos alterar el comportamiento de un bean dura
 cada una de ellas para poner nuestro código cuando el bean se inicializa y cuando se destruye.
 -Mediante XML, aquí tenemos dos opciones:
 
-       * Especificar los metodos que cambian el comportamiento al inicio y destrucción en cada bean individualmente. Lo que significa que 
+* Especificar los metodos que cambian el comportamiento al inicio y destrucción en cada bean individualmente. Lo que significa que 
        el bean que querramos modificar deberá tener los métodos especificados.
-       
-       * Especificar los metodos que cambian el comportamiento al inicio y destrucción para todos los beans. Lo que significa que todos los
+* Especificar los metodos que cambian el comportamiento al inicio y destrucción para todos los beans. Lo que significa que todos los
        beans deberán tener los métodos especificados.
+       
+## 04/04/2020
+Hoy he visto los videos de como configurar las dependencias, sus ámbitos y su ciclo de vida vistas en el día anterior, a través de distintas
+herramientas. La primera sección trata sobre _Configuración basada en anotaciones_ y el segundo en _Configuración a través de java_ .
+Empezamos con la configuración basada en anotaciones.
+La confinguración en anotaciones, como se puede intuir por su título, se realiza mediante la escritura de tags ('@<Expresión>"') 
+sobre los métodos, constructores o propiedades que le dan distintas caracteristicas a la clase en la que se encuentran al ejecutarse
+el controlador de inversión. Los tags los vemos en los videos de la sección.
+
+#### Uso de @Required
+El tag Required nos indica que una dependencia de una propiedad se tiene que instanciar si o si, en el caso de que no se encuentre un bean 
+que nos permite instanciarla, nos saltará una excepción. También está el uso del tag @Nullable, que nos indica lo contrario, que una 
+dependencia puede ser nula.
+
+#### Uso de autowired
+
+Autowired nos proporciona que una dependencia sea instanciada mediante inyección automática vista anteriormente. Esto hace que no sea 
+necesario declarar la inyección automática en el xml. La inyección automática realizada por tags siempre será _byType_ , y si no encuentra 
+un bean del mismo tipo , saltará una excepción.
+También podemos superponer el tag required o ponerlo entre parentesis después del tag autowired.
+Ejemplo de superponer los tags.
+```
+@Autowired
+@Required
+private Saludator saludator;
+
+```
+
+Ejemplo de ponerlo entre paréntesis.
+```
+@Autowired(required = true)
+private Saludator saludator;
+```
+
+Por último añadir que autowired tiene por defecto ``` required = false ```
+
+#### Uso de primary y qualifier.
+
+Primary nos indica que si hay varios  beans de un tipo, el que tenga la anotación primary será el que tenga prioridad si se hace una
+inyección automática _byType_ . 
+Qualifier nos permite seleccionar un bean específico de un tipo a la hora de hacer la inyección automática. En el tag qualifier tenemos
+que poner entre parentesis al qur nos queremos referir.
+Imaginemos que tenemos dos beans saludator _SaludatorEs_ y _SaludatorEn_ , para saludar en diferentes idiomas. Para saludar en español
+tendríamos que poner lo siguiente:
+```
+@Autowired
+@Qualyfier("saludatorEn")
+private Saludator saludator;
+```
+
+#### Uso de post constructor  y post destroy.
+
+Los dos tags nos permiten infuir en el ciclo de vida de un bean. Los tags se ponen encima de los métodos que se desean que se ejecuten
+una vez creado el bean y una vez se destruya.
+
+#### Uso de estereotipos.
+
+*Escaneo de componentes*. En el XML podemos especificar un _package_ para que busque nuestros beans, y reducir así la busqueda por
+todo el proyecto y agilizar el programa. Se hace mediante:
+```
+   <beans>
+       <context:component-scan
+              base-package="nombre-del-package"
+       />
+   </beans>
+```
+
+Encima de la declaración de cada clase que querramos que sea un componente(bean) debemos poner la anotación @Component, y así de forma
+automática será declarada como bean y nos ahorraríamos mucha escritura en el xml a parte de declarar los beans de forma más simple
+y sencilla.
+
+Tipos de componentes.
+-@Component es el bean general.
+-@Service indica un tipo de lógica de negocio, orientado a las clases servicio.
+-@Controller clase para recibir y procesar las peticiones recibidas.
+-@Repository clase de acceso a datos.
+
+
+
+
+
+
+
+
