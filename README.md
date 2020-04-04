@@ -301,10 +301,88 @@ Tipos de componentes.
 -@Controller clase para recibir y procesar las peticiones recibidas.
 -@Repository clase de acceso a datos.
 
+Aquí empezamos la parte de configuración java.
 
+#### Uso de @Configuration
+Con la configuración mediante código java, estamos prescindiendo de el xml para realizar la configuración en java, mediante el tag
+_configuration_ . El tag _configuration_ nos indica que en esa clase está la configuración del proyecto.
+En esa clase se pueden crear los beans mediante el tag @Bean (El cual se explica en el siguiente video), o podemos especificar que escanee
+componentes mediante el tag _@ComponentScan("basePackages")_ .
 
+Ejemplo con beans:
+```
+   @Configuration
+   public class appConfiguration{
+       
+       @Bean
+       public Saludator saludator(){
+              return new Saludator();
+       }
+   }
+```
 
+Ejemplo con component scan, suponiendo que el bean esté en el package _components_
+```
+   @Configuration
+   @ComponentScan("components")
+   public class appConfiguration{
+   }
+```
 
+#### Uso de @Bean
+Es una anotación a nivel de método que nos va a permitir definir un bean. El tipo de bean será el tipo que retornemos (No puede ser void)
+y el nombre del bean será el nombre del método.
+Los argumentos del método serán tratados como dependencias, por lo que el contenedor de inversión se encargará de inyectarlas.
+Se pueden usar los tags vistos anteriormente para modificar el ámbito y el ciclo de vida de un bean (@Primary por ejemplo).
 
+```
+   @Configuration
+   public class appConfiguration{
+       
+       @Bean(init)
+       @Primary
+       public Saludator saludator(){
+              return new Saludator();
+       }
+   }
+```
+
+Uso de *@value* en tipos primitivos. Sirve para inyectar valores en tipos primitivos. Pueden ser valores de un archivo .properties
+(Es el mas usado en mi entorno de trabajo), variables de entorno o valores por defecto.
+Código
+```
+   @Component
+   public class Saludator{
+       
+       @Value(${"mensaje"})
+       private String mensajeHola;
+       
+       @Value("Adiós")
+       private String mensajeAdios;
+       
+       public void Saluda(){
+              System.out.print(mensajeHola + mensajeAdios);
+       }
+   }
+```
+
+Properties
+```
+mensaje=Adiós a todos
+```
+
+Para especificar el fichero de propiedades lo hacemos en la clase de configuración mediante _@PropertySource_ . En el siguiente ejemplo, mostramos donde está el fichero .properties , usando la palabra resevada classpath.
+```
+   @Configuration
+   @PropertySource("classpath:/application.properties")
+   public class appConfiguration{
+       
+       @Bean(init)
+       @Primary
+       public Saludator saludator(){
+              return new Saludator();
+       }
+   }
+```
 
 
