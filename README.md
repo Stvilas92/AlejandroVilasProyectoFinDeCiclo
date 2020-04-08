@@ -386,3 +386,178 @@ Para especificar el fichero de propiedades lo hacemos en la clase de configuraci
 ```
 
 
+
+## 30/03/2020
+
+El último video de este curso trata de hacer un miniproyecto en el cual usemos los conceptos aprendids en este curso. En cada uno de los 
+va explicando por partes como hacer el proyecto.
+
+#### Introducción a MovieAdvisor
+Movie Advisor es el nombre del proyecto. En este video nos cuenta la utilidad y estructura del proyecto. El proyecto consiste en leer 
+películas de un archivo CSV.
+
+#### Creación del proyecto y modelo de datos
+Será un proyecto Maven en el que utilizaremos Java 8 y se incluirá el CSV en la carpeta resources. Se crea la clase _Pelicula_ (Aunque en el
+curso se llama _Fila_, me pareció mas intuitivo Película). Se trata de una clase simple, solo con propiedades, getters y setters:
+```
+
+public class Pelicula {
+    private int id;
+    private Date fecha;
+    private int year;
+    private List<String> generos;
+    
+    Getters
+    ...
+    
+    Setters
+    ...
+}
+
+```
+
+#### Repositorio y acceso a datos (Parte 1)
+
+Creamos la configuración del proyecto. Será una configuración mixta entre configuración java y anotaciones.
+Creamos una interfaz _PeliculasDAO_ para todas las peliculas que la implementen realicen ciertas operaciones (Buscar por título etc).
+Creamos la clase _PeliculaDaoImp_, que utilizaremos para acceder a los datos en memoria de las películas. Tendrá la una lista de películas e
+implementará la interfaz _PeliculasDAO_. La clase _PeliculaDAOImp_ será un bean, concretamente un repositorio.
+Creamos otra clase _ReadUtil_, la cual se encargará de cargar del fichero CSV todas las películas. Solo contará con un metodo estático en 
+el cual cargamos las películas de CSV.
+
+Clase _ReadUtil_
+```
+public class UtilFilmFileReader {
+
+	public static List<Pelicula> readFile(final String path, final String separator, final String listSeparator) {
+		List<Pelicula> result = new ArrayList<>();
+
+
+		try {
+			// @formatter:off
+			result = Files
+						.lines(Paths.get(ResourceUtils.getFile(path).toURI()))
+						.skip(1)
+						.map(line -> {
+							String[] values = line.split(separator);
+							return new Film(Long.parseLong(values[0]), values[1], values[2],
+											Arrays.asList(values[3].split(listSeparator)));
+					}).collect(Collectors.toList());
+ 			// @formatter:on
+
+
+		} catch (Exception e) {
+			System.err.println("Error de lectura del fichero de datos: imdb_data");
+			System.exit(-1);
+		}
+
+		return result;
+
+	}
+
+}
+```
+
+#### Repositorio y acceso a datos (Parte 2)
+
+Crearemos un fichero .properties donde estarán las propiedades path,separator y list_separator, que utilizaremos para leer del CSV.
+```
+file.path=classpath:imdb_data.csv
+file.csv.separator=;
+file.csv.list_separator=,
+```
+En la configuración del proyecto tenemos que indicarle donde se encuentra el fichero .properties  con ``` @PropertySource("classpath:/movieadvisor.properties")```
+También usaremos la clase de conficguración para cargar las propiedades y poner los metodos getter para acceder a ellas.
+
+```
+@Configuration
+@ComponentScan(basePackages="com.openwebinars.movieadvisor")
+@PropertySource("classpath:/movieadvisor.properties")
+public class AppConfig {
+	
+	@Value("${file.path}")
+	public String file;
+	
+	@Value("${file.csv.separator}")
+	public String separator;
+	
+	@Value("${file.csv.list_separator}")
+	public String listSeparator;
+	
+	public String getFile() {
+		return file;
+	}
+	
+	public String getSeparator() {
+		return separator;
+	}
+	
+	public String getListSeparator() {
+		return listSeparator;
+	}
+	
+}
+```
+
+Usaremos la clase configuración para cargar las propiedades en la clase _PeliculaDAOImp_ , en la misma, al ser un bean, accedemos al ciclo de 
+vida y en la función del bean cargamos el csv. Ya que tenemos las peliculas, sobreescribiremos los métodos de la interfaz _PeliculasDAOImp_ 
+para que realice las operaciones de la interfaz _PeliculasDao_
+
+```
+@Repository
+public class PeliculaDAOImp implements PeliculasDao {
+	
+	public List<Pelicula> peliculas = new ArrayList<>();
+	
+	@Autowired
+	private AppConfig appConfig;
+	
+	@PostConstruct
+	public void init() {
+		peliculas = UtilFilmFileReader.readFile(appConfig.getFile(), appConfig.getSeparator(), appConfig.getListSeparator());
+	}
+
+	public Film findById(long id) {
+		Optional<Film> result = peliculas.stream().filter(f -> f.getId() == id).findFirst();
+		return result.orElse(null);
+	}
+
+	public Collection<Film> findAll() {		
+		return peliculas;
+	}
+
+	public void insert(Film film) {
+		peliculas.add(film);
+	}
+
+	public void edit(Film film) {
+		int index = getIndexOf(film.getId());
+		if (index != -1)
+			peliculas.set(index, film);
+	}
+
+	public void delete(long id) {
+		int index = getIndexOf(id);
+		if (index != -1)
+			peliculas.remove(index);
+
+	}
+	
+	private int getIndexOf(long id) {
+		boolean encontrado = false;
+		int index = 0;
+		
+		while (!encontrado && index < peliculas.size()) {
+			if (peliculas.get(index).getId() == id)
+				encontrado = true;
+			else
+				index++;
+		}
+		
+		return (encontrado) ? index : -1;
+	}
+
+}
+```
+
+#### Servicios
