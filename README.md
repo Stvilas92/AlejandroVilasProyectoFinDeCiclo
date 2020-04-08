@@ -394,7 +394,8 @@ va explicando por partes como hacer el proyecto.
 
 #### Introducción a MovieAdvisor
 Movie Advisor es el nombre del proyecto. En este video nos cuenta la utilidad y estructura del proyecto. El proyecto consiste en leer 
-películas de un archivo CSV.
+películas de un archivo CSV. Para hacerlo, el usuario dispndrá de una serie de comandos para buscar las películas desde terminal.
+Las busquedas de peliculas será con filtros , id, genero etc.
 
 #### Creación del proyecto y modelo de datos
 Será un proyecto Maven en el que utilizaremos Java 8 y se incluirá el CSV en la carpeta resources. Se crea la clase _Pelicula_ (Aunque en el
@@ -517,20 +518,20 @@ public class PeliculaDAOImp implements PeliculasDao {
 		peliculas = UtilFilmFileReader.readFile(appConfig.getFile(), appConfig.getSeparator(), appConfig.getListSeparator());
 	}
 
-	public Film findById(long id) {
-		Optional<Film> result = peliculas.stream().filter(f -> f.getId() == id).findFirst();
+	public Pelicula findById(long id) {
+		Optional<Pelicula> result = peliculas.stream().filter(f -> f.getId() == id).findFirst();
 		return result.orElse(null);
 	}
 
-	public Collection<Film> findAll() {		
+	public Collection<Pelicula> findAll() {		
 		return peliculas;
 	}
 
-	public void insert(Film film) {
-		peliculas.add(film);
+	public void insert(Pelicula pelicula) {
+		peliculas.add(pelicula);
 	}
 
-	public void edit(Film film) {
+	public void edit(Pelicula pelicula) {
 		int index = getIndexOf(film.getId());
 		if (index != -1)
 			peliculas.set(index, film);
@@ -561,3 +562,284 @@ public class PeliculaDAOImp implements PeliculasDao {
 ```
 
 #### Servicios
+
+Se encargarán de procesar las peticiones del usuario para mostrarle los datos que el mismo desee.
+Se usarán Predicados, los cuales usaremos para encadenar métodos en caso de que el usuario nos pida varios tipos de datos.
+Para trabajar con los conjuntos de datos crearemos una interfaz _PeliculaQueryService_ cuyos métodos se sobrescribirán en una
+nueva clase _PeliculaQueryServiceImp_ la cual usaremos para buscar peliculas mediante busquedas con filtros (Por id, fecha etc).
+La clase será un bean , en concreto un service.
+```
+
+@Service
+public class PeliculaQueryServiceImpl implements PeliculaQueryService{
+	
+	@Autowired
+	PeliculaDao dao;
+
+	private Predicate<Pelicula> predicate;
+	
+	@PostConstruct
+	public void init() {
+		predicate = null;
+	}
+
+	public Collection<Pelicula> exec() {
+		
+		// @formatter:off
+		return dao.findAll()
+				.stream()
+				.filter(predicate)
+				.collect(Collectors.toList()); 
+		// @formatter:on
+
+	}
+
+	public PeliculaQueryServiceImpl anyGenre(String... genres) {
+		Predicate<Pelicula> pAnyGenre = (pelicula -> Arrays.stream(genres).anyMatch(film.getGenres()::contains));
+		predicate = (predicate == null) ? pAnyGenre : predicate.and(pAnyGenre);
+		return this;
+	}
+
+	public PeliculaQueryServiceImpl allGenres(String... genres) {
+		Predicate<Pelicula> pAllGenres = (pelicula -> Arrays.stream(genres).allMatch(film.getGenres()::contains));
+		predicate = (predicate == null) ? pAllGenres : predicate.and(pAllGenres);
+		return this;
+	}
+
+	public PeliculaQueryServiceImpl year(String year) {
+		Predicate<Pelicula> pYear = (pelicula -> pelicula.getYear().equalsIgnoreCase(year));
+		predicate = (predicate == null) ? pYear : predicate.and(pYear);
+		return this;
+	}
+
+	public PeliculaQueryServiceImpl betweenYears(String from, String to) {
+		Predicate<Pelicula> pBetweenYears = (pelicula -> {
+			LocalDate fromYear = LocalDate.of(Integer.parseInt(from), 1, 1);
+			LocalDate toYear = LocalDate.of(Integer.parseInt(to), 1, 3);
+			LocalDate filmYear = LocalDate.of(Integer.parseInt(film.getYear()), 1, 2);
+
+			return peliculaYear.isAfter(fromYear) && peliculaYear.isBefore(toYear);
+		});
+		
+		predicate = (predicate == null) ? pBetweenYears : predicate.and(pBetweenYears);
+
+		return this;
+	}
+
+	public PeliculaQueryServiceImpl titleContains(String title) {
+		Predicate<Pelicula> pTitleContains  = (pelicula -> pelicula.getTitle().toLowerCase().contains(title.toLowerCase()));
+		predicate = (predicate == null) ? pTitleContains : predicate.and(pTitleContains);
+		
+		return this;
+	}
+
+}
+```
+Crearemos por último la clase _PeliculasService_ donde montaremos todas las consultas sobre los datos que se pueden hacer desde _PeliculaDaOImp_ y _PeliculaQueryServiceImpl_ . También será un bean servicio.
+
+
+```
+@Service
+public class PeliculasService {
+
+	@Autowired
+	PeliculaDao peliculaDao;
+
+	@Autowired
+	PeliculaQueryServiceImp queryService;
+
+	public Collection<String> findAllGenres() {
+		List<String> result = null;
+
+		// @formatter:off
+		result = peliculaDao.findAll()
+				.stream()
+				.map(f -> f.getGenres())
+				.flatMap(lista -> lista.stream())
+				.distinct()
+				.sorted()
+				.collect(Collectors.toList());
+
+		// @formatter:on
+
+		return result;
+	}
+
+	public Collection<Pelicula> findByAnyGenre(String... genres) {
+
+		return queryService.anyGenre(genres).exec();
+
+	}
+
+	public Collection<Pelicula> findByAllGenres(String... genres) {
+		return queryService.allGenres(genres).exec();
+	}
+
+	public Collection<Pelicula> findByYear(String year) {
+		return queryService.year(year).exec();
+	}
+
+	public Collection<Pelicula> findBetweenYears(String from, String to) {
+		return queryService.betweenYears(from, to).exec();
+	}
+
+	public Collection<Pelicula> findByTitleContains(String title) {
+		return queryService.titleContains(title).exec();
+	}
+
+	public Collection<Pelicula> findAll() {
+		return peliculaDao.findAll();
+	}
+}
+```
+
+
+#### Ejecución de la app
+
+Aquí crearemos los elementos que faltan.
+Creamos la clase _MovieAdvisorApp_ desde la que lanzamos el programa.
+Creamos la clase _MovieAdvisorHelp_ en la cual cargaremos menssajes de ayuda y error que se mostrarán al usuario. Los mensajes los 
+cargaremos de un fichero txt _hel.txt_ el cual contiene todos los mensajes de ayuda que se le mostrarán al usuario. La clase será un bean general el cual señalaremos con el tag Component
+
+```
+@Component
+public class MovieAdvisorHelp {
+
+	private String help;
+
+	@PostConstruct
+	public void init() {
+		try {
+			// @formatter:off
+			help = Files
+					.lines(Paths.get(ResourceUtils.getFile("classpath:ayuda.txt").toURI()))
+					.collect(Collectors.joining("\n")); 
+			// @formatter:on
+
+		} catch (IOException e) {
+			System.err.println("Error cargando el texto de ayuda");
+			System.exit(-1);
+		}
+	}
+
+	public String getHelp() {
+		return help;
+	}
+
+}
+
+```
+Creamos la clase MovieAdvisorRunApp, la cual actuaría de manera parecida a un _controller_ y es donde estará la lógica del programa. 
+Para interactuar con el usuario se proporcionarán una serie de comandos que usará para acceder a las differentes querys del servicio
+_PeliculaService_ . En mi opinión el código para la interfaz es un poco lioso y creo que hubiese sido más sencillo utilizar un _controller_
+normal. También será un component, el cual instanciaremos la clase _MovieAdvisorApp_.
+
+```
+@Component
+public class MovieAdvisorRunApp {
+
+	@Autowired
+	PeliculaService peliculaService;
+	
+	@Autowired
+	PeliculaQueryServiceImp peliculaQueryService;
+
+	@Autowired
+	MovieAdvisorHelp help;
+
+	public void run(String[] args) {
+
+		if (args.length < 1) {
+			System.out.println("Error de sintaxis");
+			System.out.println(help.getHelp());
+		} else if (args.length == 1) {
+			switch (args[0].toLowerCase()) {
+			case "-lg":
+				peliculaService.findAllGenres().forEach(System.out::println);
+				break;
+			case "-h":
+				System.out.println(help.getHelp());
+				break;
+			default:
+				System.out.println("Error de sintaxis");
+				System.out.println(help.getHelp());
+
+			}
+		} else if (args.length % 2 != 0) {
+			System.out.println("Error de sintaxis");
+			System.out.println(help.getHelp());
+		} else if (args.length > 8) {
+			System.out.println("Error de sintaxis");
+			System.out.println(help.getHelp());
+		} else {
+			List<String[]> argumentos = new ArrayList<>();
+
+			for (int i = 0; i < args.length; i += 2) {
+				argumentos.add(new String[] { args[i], args[i + 1] });
+			}
+			
+			boolean error = false;
+
+			for (String[] argumento : argumentos) {
+				switch (argumento[0].toLowerCase()) {
+				case "-ag":
+					peliculaQueryService.anyGenre(argumento[1].split(","));
+					break;
+				case "-tg":
+					peliculaQueryService.allGenres(argumento[1].split(","));
+					break;
+				case "-y":
+					peliculaQueryService.year(argumento[1]);
+					break;
+				case "-b":
+					String[] years = argumento[1].split(",");
+					peliculaQueryService.betweenYears(years[0], years[1]);
+					break;
+				case "-t":
+					peliculaQueryService.titleContains(argumento[1]);
+					break;
+				default: error = true;
+						 System.out.println("Error de sintaxis");
+						 System.out.println(help.getHelp());
+				}
+
+			}
+			
+			if (!error) {
+				Collection<Pelicula> result = peliculaQueryService.exec();
+				System.out.printf("%s\t%-50s\t%s\t%s\n","ID","Título", "Año", "Géneros");
+				if (result != null) {
+					result.forEach(f -> System.out.printf("%s\t%-50s\t%s\t%s\n", 
+							f.getId(), f.getTitle(), f.getYear(), 
+							f.getGenres().stream().collect(Collectors.joining(", "))));
+				} else {
+					System.out.println("No hay películas que cumplan esos criterios. Lo sentimos");
+				}
+			}
+		}
+
+	}
+
+}
+```
+
+
+Por último nos queda ejecutar el método run creado anteriormente en la clase _MovieAdvisorRunApp_ en la clase _MovieAdvisorApp_ que 
+se encargará de lanzar la aplicación.
+```
+public class MovieAdvisorApp {
+
+	public static void main(String[] args) {
+		
+		ApplicationContext appContext = new AnnotationConfigApplicationContext(AppConfig.class);
+		
+		MovieAdvisorRunApp runApp = appContext.getBean(MovieAdvisorRunApp.class);
+		
+		runApp.run(args);
+		
+		((AnnotationConfigApplicationContext) appContext).close();
+
+	}
+}
+```
+Y ya estaría la aplicación montada. Muy importante acordarse de especificar la versión de java 8 , tanto para java como para java compiler.
