@@ -387,7 +387,7 @@ Para especificar el fichero de propiedades lo hacemos en la clase de configuraci
 
 
 
-## 30/03/2020
+## 08/04/2020
 
 El último video de este curso trata de hacer un miniproyecto en el cual usemos los conceptos aprendids en este curso. En cada uno de los 
 va explicando por partes como hacer el proyecto.
@@ -843,3 +843,58 @@ public class MovieAdvisorApp {
 }
 ```
 Y ya estaría la aplicación montada. Muy importante acordarse de especificar la versión de java 8 , tanto para java como para java compiler.
+
+
+## 08/04/2020
+ 
+ Comienzo con el segundo curso de la carrera _Spring Boot y Spring MVC_ . Este curso lo había empezado en octubre y estoy en el 25% del curso que es donde lo retomaré haciendo un breve resumen de lo que he visto
+ 
+ ### Spring Boot
+ 
+ En un conjunto de videos se nos explica que es _Spring Boot_ y cuales son sus características. _Spring Boot_ es una herramienta para 
+ crear con mayor facilidad aplicaciones basadas en el framework spring, sin crear la configuración en xml y configurando automaticamente
+ librerías y dependencias.
+ 
+ ### Spring Web MVC
+ 
+ De esta parte me he visto los cinco primeros videos en los cuales se explica:
+ -Como funciona una aplicación web. Peticiones, metodos HTTP etc.
+ -Se explican algunos patrones de diseño, haciendo especial hincapié en el modelo vista controlador.
+ -Estructura de un proyecto web. Modelos, controladores, vistas, servicios etc.
+ -Conceptos de Java EE. Servlets , web.xml, filters, contextos y algunos beans especiales como _HandlerMapping_ .
+ -Que es un controlador y que estructura y características tiene.
+ 
+ A partir de aquí empiezo con los videos que no he visto de este curso.
+ 
+ #### Las vistas
+ 
+ Spring MVC es completamente independiente de la vista, podemos cambiar la tecnología de la vista independientemente de lo que tengamos en
+ los otros componentes. En este curso se usará la tecnología _Theymeleaf_ para las vistas, en mi trabajo solemos usar React.
+ Theymeleaf es una plantilla que usa código HMTL + CSS + JavaScript.
+ Spring Boot se encarga de configurar _Theymeleaf_ a traves de los beans _TemplateEngine_, _TemplateResolver_ y _ViewResolver_ . También
+ podemos cambiar la configuración en el fichero _application.properties_ , donde se alojan las propiedades del proyecto.
+ 
+ 
+ #### @RequestParam
+ Nos explica el parámetro _@RequestParam_, que es igual al mismo en la tecnología _JavaRX_ visto en Acceso a datos y se usa de la misma
+ forma poniendo el tag el un argumento de un método HTTP.
+ ```
+ public Response recibeDatos(@RequestParam Datos datos){}
+ ```
+ Por defecto , la propiedad _required_ de el parámetro es _true_. Para cambiarla, debemos poner parentesis después del tag poniendo
+ ``` (required = false) ``` .
+ 
+ #### @PathVariable
+ Nos explica el parámetro _@PathVariable, que al igual que_@RequestParam_ es igual al _athVariable_ visto en Acceso a datos y se usa de la
+ misma forma.
+ 
+ #### Recursos Estáticos
+ 
+ Por recursos estáticos entedemos ficheros HTML, imágenes fichero etc.  Se almacenarán el _%ClassPath%/src/resurces/static_ y serán mapeados
+ automáticamente por Spring Boot. Si deseaos usarlos en HTML por ejemplo, no tendrmos más que escribir ``` src/<nombre_del_recurso>``` .
+ 
+ #### WebJars
+ 
+ Forma de integrar librerías externas en nuestro proyecto utilizando maven. Todas las dependencias de Maven serán mapeadas a la ruta
+ _/webjars/**_ . Esto nos permite integrar tecnologías como boostrap e ir acutalizando sus versiones a través del tiempo de forma
+ fácil y sencilla.
