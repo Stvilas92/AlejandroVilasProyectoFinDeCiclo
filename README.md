@@ -845,7 +845,7 @@ public class MovieAdvisorApp {
 Y ya estaría la aplicación montada. Muy importante acordarse de especificar la versión de java 8 , tanto para java como para java compiler.
 
 
-## 08/04/2020
+## 09/04/2020
  
  Comienzo con el segundo curso de la carrera _Spring Boot y Spring MVC_ . Este curso lo había empezado en octubre y estoy en el 25% del curso que es donde lo retomaré haciendo un breve resumen de lo que he visto
  
@@ -898,3 +898,26 @@ Y ya estaría la aplicación montada. Muy importante acordarse de especificar la
  Forma de integrar librerías externas en nuestro proyecto utilizando maven. Todas las dependencias de Maven serán mapeadas a la ruta
  _/webjars/**_ . Esto nos permite integrar tecnologías como boostrap e ir acutalizando sus versiones a través del tiempo de forma
  fácil y sencilla.
+ 
+ ## 10/04/2020
+ 
+  #### Formularios
+  Se harán a traves De _Thyemeleaf_ , Spring tratará los campos del formulario con un bean llamado _CommandObject_ , que debe tener tantos
+  objetos como campos el formulario. La acción del formulario será llamar al controlador encargado de recibir los dats del formulario y
+  llamar a los servcios asociados que ejecuten la lógica de negocio correspondiente.
+  En los inputs deberos referenciar a la propiedad del objeto _CommandObject_ que vayamos a rellenar.
+  Ejemplo con empleados:
+  ```
+  <form action="#"
+  	th:action="@{/empleado/new/submit}"
+	th:object="${/empleadoForm}"
+	method="post">
+  <input type="text" id="idObject" th:field=*{campo}
+  ```
+  
+  #### Formularios de edición
+  A diferencia del apartado anterior, este formulario nos permite modificar datos. Para ello, el objeto _CommandObject_ no debe ir vacío
+  , es decir , sus propiedades deben tener valores. La forma de ejecución es igual a la anterior , solo cambiarán las URLs, puesto que
+  en el controlador tiene que haber otro método para modificar datos que lleven a una lógica de negocio distinta a la de crear
+  datos.
+  
