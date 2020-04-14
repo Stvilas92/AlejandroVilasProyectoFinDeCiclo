@@ -1,4 +1,4 @@
-# AlejandroVilasProyectoFinDeCiclo
+# Alejandro Vilas Proyecto Fin De Ciclo
 Proyecto de fin de ciclo. Carrera de desarrollador de spring en OpenWebinars
 
 
@@ -921,3 +921,328 @@ Y ya estaría la aplicación montada. Muy importante acordarse de especificar la
   en el controlador tiene que haber otro método para modificar datos que lleven a una lógica de negocio distinta a la de crear
   datos.
   
+##14/04/2020
+
+#### Validación de datos
+Se pueden validar los datos que recibimos de un formulario mediante tags de validación . Los más comunes son:
+- @NotNull El valor no puede ser nulo.
+- @Email El valor tiene que ser un email.
+- @Max mayor o igual que el valor especificado.
+- @Min menor o igual que el valor especificado.
+- @NotEmpty, aplicada a colecciones, no debe estar vacía.
+- @Size aplicada a colecciones, no debe tener un tamaño especificado.
+
+```
+public class Empleado{
+	@Min(0)
+	private id;
+	
+	@NotNull
+	private dni
+}
+```
+
+En el controller donde se insertan los datos del formulario, tenemos que especificar eque el objeto que recibimos debe ser válido mediante
+el tag _@Valid_
+
+```
+@PostMapping("empleado/new")
+public void addEmpleado(@Valid @ModelAtribute("empleadoForm") Empleado empleado, BindingResult bindingResult ){
+	if(bindingResult.hasErrors()){
+		return "form";
+	}
+	servicio.add(empleado);
+}
+```
+Se pueden personalizar los mensajes por defecto que la aplicación muestra si hay error poniendo una propiedad clave=valor dentro del
+tag de validación.
+
+´´´
+public class Empleado{
+	@Min(value = 0, message="El campo id de tener un valor mas alto que 0")
+	private id;
+	
+	@NotNull(message="Tiene que existir un DNI")
+	private dni
+}
+´´´
+También se pueden hacer configurables los mensajes mediante el archivo .properties . Para ello debemos insertar dos nuevos beans en la configuración del proyecto. En el siguiente ejemplo vamos a suponer que los mensajes estarían en el archivo eeror.properties.
+
+```
+@Configuration
+public class MyConfig {
+	
+	@Bean
+	public MessageSource messageResource() {
+		ReloadableResourceBundleMessageSource messageSource =
+				new ReloadableResourceBundleMessageSource();
+		
+		messageSource.setBasename("classpath:errors");
+		messageSource.setDefaultEncoding("UTF-8");
+		
+		
+		return messageSource;
+	}
+	
+	@Bean
+	public LocalValidatorFactoryBean getValidator() {
+		LocalValidatorFactoryBean bean = new LocalValidatorFactoryBean();
+		bean.setValidationMessageSource(messageResource());
+		return bean;
+	}
+}
+
+```
+
+El archivo errors.properties
+```
+errors.id="Id mal introducida, debe ser mayor que 0"
+errors.dni="Debes insertar un DNI"
+```
+
+El objeto empleados
+
+´´´
+public class Empleado{
+	@Min(value = 0, message="${errors.id}")
+	private id;
+	
+	@NotNull(message=${errors.dni})
+	private dni
+}
+´´´
+
+#### Subida de ficheros
+Para ello vamos a utilizar mensaje multiparte, que no deja de ser un mensaje con diferentes partes en formatos distintos, con lo que 
+podemos rellenar los campos del formulario y subir ficheros al mismo tiempo. Debe existir en el formulario un input tipo _file_ .
+Para recibir el mensage multiparte con el fichero del formulario debemos usar la clase _Multipart_.
+
+´´´
+public class Empleado{
+	@Min(value = 0, message="${errors.id}")
+	private id;
+	
+	@NotNull
+	Image image;
+}
+´´´
+El controller
+```
+@PostMapping("empleado/new")
+public void addEmpleado(@Valid @ModelAtribute("empleadoForm") Empleado empleado, BindingResult bindingResult,
+	@RequestParam("file")Multipart file
+	if(bindingResult.hasErrors()){
+		return "form";
+	}
+	if(!file.isEmpty()){
+		//Lógica de almacenamiento de fichero
+	}
+	servicio.add(empleado);
+}
+```
+
+#### Servicio de almacenamiento de ficheros
+La idea es hacer un servicio de un almacenamiento de ficheros que funcienorá por lo menos en nuestro local, haciendolo configurable 
+con diferentes beans y porperties. La implementación se hace en el siguiente video
+El servicio se usará utlizando la siguiente interfaz
+```
+public interface StorageService {
+
+    void init();
+
+    String store(MultipartFile file, long id);
+
+    Stream<Path> loadAll();
+
+    Path load(String filename);
+
+    Resource loadAsResource(String filename);
+
+    void deleteAll();
+
+}
+```
+
+OpenWebinars nos proporciona el servicio que procesa los ficheros utilizando la anterior interfaz anteriormente creada. Podemos ver
+como el path del proyecto es configurable a traves de un archivo .properties .
+```
+@Service
+public class FileSystemStorageService implements StorageService{
+
+    private final Path rootLocation;
+		
+    @Autowired
+    public FileSystemStorageService(StorageProperties properties) {
+        this.rootLocation = Paths.get(properties.getLocation());
+    }
+    
+    @Override
+    public String store(MultipartFile file, long id) {
+        String filename = StringUtils.cleanPath(file.getOriginalFilename());
+        String extension = StringUtils.getFilenameExtension(filename);
+        String storedFilename = Long.toString(id) + "." + extension;
+        try {
+            if (file.isEmpty()) {
+                throw new StorageException("Failed to store empty file " + filename);
+            }
+            if (filename.contains("..")) {
+                throw new StorageException(
+                        "Cannot store file with relative path outside current directory "
+                                + filename);
+            }
+            try (InputStream inputStream = file.getInputStream()) {
+                Files.copy(inputStream, this.rootLocation.resolve(storedFilename),
+                    StandardCopyOption.REPLACE_EXISTING);
+                return storedFilename;
+            }
+        }
+        catch (IOException e) {
+            throw new StorageException("Failed to store file " + filename, e);
+        }
+        
+    }
+    
+    @Override
+    public Stream<Path> loadAll() {
+        try {
+            return Files.walk(this.rootLocation, 1)
+                .filter(path -> !path.equals(this.rootLocation))
+                .map(this.rootLocation::relativize);
+        }
+        catch (IOException e) {
+            throw new StorageException("Failed to read stored files", e);
+        }
+
+    }
+
+    @Override
+    public Path load(String filename) {
+        return rootLocation.resolve(filename);
+    }
+    
+    @Override
+    public Resource loadAsResource(String filename) {
+        try {
+            Path file = load(filename);
+            Resource resource = new UrlResource(file.toUri());
+            if (resource.exists() || resource.isReadable()) {
+                return resource;
+            }
+            else {
+                throw new StorageFileNotFoundException(
+                        "Could not read file: " + filename);
+
+            }
+        }
+        catch (MalformedURLException e) {
+            throw new StorageFileNotFoundException("Could not read file: " + filename, e);
+        }
+    }
+    
+    @Override
+    public void deleteAll() {
+        FileSystemUtils.deleteRecursively(rootLocation.toFile());
+    }
+    
+    @Override
+    public void init() {
+        try {
+            Files.createDirectories(rootLocation);
+        }
+        catch (IOException e) {
+            throw new StorageException("Could not initialize storage", e);
+        }
+    }
+
+}
+```
+
+#### Implementación de la subidad de ficheros en nuestro proyecto.
+Cada vez que creemos un empleado hay que almacenarlo en el fichero y guardarlo en el fichero.
+Utilizaremos el método serveFile, que nos devolverá el fichero como respuesta a una petición. 
+Añadiremos un método en el controller para cargar el fichero y que además nos reponda un _Response_ HTTP que nos indique
+si la petición se ha procesado correctamente o se han producido errores. el ```.+```en el filename significa que el valor sera ``` 
+valor.valor```
+```
+@GetMapping("/files/{filename:.+}")
+	@ResponseBody
+	public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
+		Resource file = storageService.loadAsResource(filename);
+		return ResponseEntity.ok().body(file);
+	}
+```
+Una vez tenemos cargado el fichero nos deberemos ir a modificar os métodos que utilizabamos para añadir empleados en el controller
+
+```
+@Controller
+public class EmpleadoController {
+
+	@Autowired
+	private EmpleadoService servicio;
+	
+	@Autowired
+	private StorageService storageService;
+
+	@GetMapping({ "/", "/empleado/list" })
+	public String listado(Model model) {
+		model.addAttribute("listaEmpleados", servicio.findAll());
+		return "list";
+	}
+
+	@GetMapping("/empleado/new")
+	public String nuevoEmpleadoForm(Model model) {
+		model.addAttribute("empleadoForm", new Empleado());
+		return "form";
+	}
+
+	@PostMapping("/empleado/new/submit")
+	public String nuevoEmpleadoSubmit(@Valid @ModelAttribute("empleadoForm") Empleado nuevoEmpleado,
+			BindingResult bindingResult, @RequestParam("file") MultipartFile file) {
+
+		if (bindingResult.hasErrors()) {			
+			return "form";	
+			
+		} else {
+			if (!file.isEmpty()) {
+				String avatar = storageService.store(file, nuevoEmpleado.getId());
+				nuevoEmpleado.setImagen(MvcUriComponentsBuilder
+						.fromMethodName(EmpleadoController.class, "serveFile", avatar).build().toUriString());
+			}
+			servicio.add(nuevoEmpleado);
+			return "redirect:/empleado/list";
+		}
+	}
+
+	@GetMapping("/empleado/edit/{id}")
+	public String editarEmpleadoForm(@PathVariable long id, Model model) {
+		Empleado empleado = servicio.findById(id);
+		if (empleado != null) {
+			model.addAttribute("empleadoForm", empleado);
+			return "form";
+		} else
+			return "redirect:/empleado/new";
+	}
+
+	@PostMapping("/empleado/edit/submit")
+	public String editarEmpleadoSubmit(@Valid @ModelAttribute("empleadoForm") Empleado nuevoEmpleado,
+			BindingResult bindingResult) {
+
+		if (bindingResult.hasErrors()) {			
+			return "form";	
+		} else {
+			servicio.edit(nuevoEmpleado);
+			return "redirect:/empleado/list";
+		}
+	}
+	
+	@GetMapping("/files/{filename:.+}")
+	@ResponseBody
+	public ResponseEntity<Resource> serveFile(@PathVariable String filename) {
+		Resource file = storageService.loadAsResource(filename);
+		return ResponseEntity.ok().body(file);
+	}
+
+}
+```
+En el método _MvcUriComponentsBuilder.fromMethodName_ motaríamos una uri por partes, utilizando el método al que hacemos referencia
+como argumneto, en este caso, _serveFile_ .
