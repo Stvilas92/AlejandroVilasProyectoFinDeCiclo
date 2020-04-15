@@ -1246,3 +1246,161 @@ public class EmpleadoController {
 ```
 En el método _MvcUriComponentsBuilder.fromMethodName_ motaríamos una uri por partes, utilizando el método al que hacemos referencia
 como argumneto, en este caso, _serveFile_ .
+
+
+## 15/04/2020
+
+#### Aplicación de web segura con Spring Security
+Lo primero es importar en maven la dependencia de Spring-Starter-Security.
+```
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-security</artifactId>
+    <version>2.2.6.RELEASE</version>
+</dependency>
+```
+La seguridad responde a quién es cada usuario y que permisos tiene. Autenticación y autorización.
+Crearemos una clase llamada _SecurityConfig_ , que tendrá los tags @Configuration y @EnableWebSecurity y debe de heredar de 
+WeSecurityAdapter.
+Autenticación, se hará en memoria de forma muy sencilla. Lo hacemos sobreescribiendo el método configure. Vamos a hacer que para 
+hacer los roles de administrador de una aplicación, el usuario se tenga que identificarse con el nombre _admin_ y con la contraseña 
+_admin_. Además la contrseña no estará encriptada.
+
+```
+@Override
+protected void configure(AutenticationManagerBuilder autenticationManagerBuilder) throws Exception{
+	auth.
+		inMemotyApplication().
+		passwordEncoder(NoOpPasswordEncoder.getInstance()).
+		withUser("Admin").
+		password("Admin").
+		roles("ADMIN");
+}
+```
+
+Con este código:
+* Todas las peticiones requieren autenticación.
+* Generación automática de un login.
+* Previenen ataques CSRF entre otros
+* Se integran los métodos http de la clase server.
+
+
+Autorización , es my simple, simplemente hay que indicar que peticiones requieren de autorización y cuales no.
+
+```
+@Override
+protected void configure(AutenticationManagerBuilder autenticationManagerBuilder) throws Exception{
+	http.
+		authorizeRequests().
+		anyRequest().
+		authenticated();
+}
+```
+
+#### Implementación del login con spring security
+
+Vamos a autorizar con un login a diferentes usuarios un aplicación web. Lo primero es la parte visual, que utilizaremos una plantilla
+de login de html, para crear un login.
+```
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Formulario de login</title>
+<meta name="description" content="">
+<meta name="author" content="">
+
+
+<!-- Bootstrap core CSS -->
+<!-- Custom styles for this template -->
+<link href="/webjars/bootstrap/css/bootstrap.min.css" rel="stylesheet">
+
+<link href="/css/signin.css" rel="stylesheet">
+
+
+      <script src="https://oss.maxcdn.com/html5shiv/3.7.3/html5shiv.min.js"></script>
+<!-- HTML5 shim and Respond.js for IE8 support of HTML5 elements and media queries -->
+<!--[if lt IE 9]>
+      <script src="https://oss.maxcdn.com/respond/1.4.2/respond.min.js"></script>
+    <![endif]-->
+            <label for="username" class="sr-only">Username</label> <input
+</head>
+
+<body>
+
+    <div class="container">
+
+        <form class="form-signin" th:action="@{/login}" method="post">
+            <h2 class="form-signin-heading">Por favor, introduzca sus datos</h2>
+                for="password" class="sr-only">Password</label> <input
+                type="text" id="username" name="username" class="form-control"
+                placeholder="Username" required autofocus> <label
+                type="password" name="password"  id="password" class="form-control"
+    ================================================== -->
+                placeholder="Password" required>
+            <button class="btn btn-lg btn-primary btn-block" type="submit">Sign
+                in</button>
+        </form>
+
+    </div>
+    <!-- /container -->
+
+    <!-- Bootstrap core JavaScript
+</html>
+    <!-- Placed at the end of the document so the pages load faster -->
+    <script src="/webjars/jquery/jquery.min.js"></script>
+    <script src="/webjars/bootstrap/js/bootstrap.min.js"></script>
+
+
+</body>
+```
+
+Y como vimos antes en el método configure debemos indicar que autorizamos a ls usuarios que se logeen en el login anterior. También
+hay que permitir que los elementos web y css estén habilitados, porque si no, no nos cargará el login.
+
+```
+@Override
+protected void configure(AutenticationManagerBuilder autenticationManagerBuilder) throws Exception{
+	http.
+		authorizeRequests()
+		.anyMatchers("/webjars/**","/css/**).permitAll()
+		.anyRequest()
+		.authenticated()
+		.formLogin()
+		.loginPage("/login")
+		.permitAll();
+		
+}
+```
+
+#### Manejo de sesiones con srping session
+
+Utilizadas para almacenar claves valor que sobreviven entre diferentes peticiones. Una sesión es única por cada usuario. Esto 
+ayuda a la lógica de nuestra aplicación (Un carrito de compra por ejemplo). Con @Autowired, spring maneja e inyecta el trabajo
+con sesiones con el bean HttpSession.
+
+#### Integración de spring session en nuestro proyecto
+Actulizaremos el pomp para añadir las dependencias necesarias.
+```
+<dependency>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-data-redis</artifactId>
+    <version>2.2.6.RELEASE</version>
+</dependency>
+<dependency>
+    <groupId>org.springframework.session</groupId>
+    <artifactId>spring-session-data-redis</artifactId>
+    <version>2.2.2.RELEASE</version>
+</dependency>
+```
+
+Modificamos la configuración mediante el archivo .properties de nuestro proyecto.
+```
+spring.session.store-type=redis
+```
+
+Redis es un framework el cual se encarga del manejo de sesiones con spring. Spring se encarga de crear un filtro _springSessionRepositoryFIlter_
+el cual se encarga de redirigir a redis el manejo de beans HttpSession. En el fichero properties se pueden configrurar otros
+aspectos de la sesion como el timeout y el modo de volcado de datos.
