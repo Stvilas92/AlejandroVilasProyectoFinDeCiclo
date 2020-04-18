@@ -1404,3 +1404,136 @@ spring.session.store-type=redis
 Redis es un framework el cual se encarga del manejo de sesiones con spring. Spring se encarga de crear un filtro _springSessionRepositoryFIlter_
 el cual se encarga de redirigir a redis el manejo de beans HttpSession. En el fichero properties se pueden configrurar otros
 aspectos de la sesion como el timeout y el modo de volcado de datos.
+
+
+
+## 18/04/2020
+
+Hoy empiezo la parte de _Spring Data JPA_ dentro del curso de _Spring Boot y Spring MVC_
+
+#### Introducción a Spring Data
+#### Integración de las entidades en nuestro proyecto.
+Pongo los dos videos porque primero se explica la teoría y después la implementación, la cual muestro en los códigos de ejemplo.
+Vamos a ver una herramienta para tener persitencia de información, usando bases de datos. Se plantea _Spring JPA_ para hacer mas sencilla
+la interacción con la base de datos. _Spring Data_ usa el framework _Hibernate_, que se encarga de relacionar nuestra aplicación con
+la base de datos y ejecutar operaciones CRUD.
+ _Spring Data_ trabaja tanto con bases relacionales como no relacionales.
+
+#### Entidades
+
+En un modelo entidad-relacion de una base de datos relacional, necesitamos que las entidades puedan ser facilmente accesibles. Para ello
+mapeamos una clase Java normal a una entidad. Para ello se nos proporciona un mapeo automático con el tag @Entity, que colocamos sobre
+la declaración de la clase. Como requisito, la clase debe tener una propiedad que se usada como clave primaria, y señalada con el tag
+@Id.
+```
+@Entity
+public class Persona{
+	@Id
+	private String dni;
+
+}
+```
+Podemos controlar las tablas y columns con los tags @Table y @Column
+```
+@Entity
+@Table(name = "Persona")
+public class Persona{
+	@Id
+	@Column(name = "Dni")
+	private String dni;
+
+}
+```
+Se pueden autogenerar valores con el tag @GeneratedValue
+```
+@Entity
+@Table(name = "Persona")
+public class Persona{
+	@Id
+	@GeneratedValue(strategy = GenerationType.AUTO)
+	@Column(name = "Dni")
+	private String dni;
+
+}
+```
+Hay cuatro estrategias para generar valores :
+-AUTO, hibernate escoge cual es la mejor estrategia para generar valores.
+-SEQUENCE, se generan valores en base a una secuencia.
+-IDENTITY, se utiliza un campo auto numérico.
+-TABLE, se utiliza una tabla extra especial.
+
+Para asociar entidades podemos usar los tags de relaciones, @ManyToMany , @OneToOne,  @OneToMany y @ManyToOne .
+Para rellenar campos se pueden usar los mismos tags de validación de datos que en los formularios.
+
+#### Repositorios
+#### Integración de repositorios en nuestro proyecto.
+Los repositorios son la interfaz principal de Spring data. Permiten hacer operaciones CRUD sobre la entidad que especifiquemos y el tipo
+de id que maneja. Para la clase persona anterior el repositorio sería.
+```
+public interface PersonaRepository extends CrudRepositoty<Persona,Long>
+```
+Para crear una persona en la base de datos debemos usar el método _save_ del repositorio. Para buscarla podemos usar _findAll()_
+```
+Persona persona = new Persona("56756789F");
+personaRepository.save(persona);
+personaRepository.findAll().foreach(System.out::print);
+```
+Para guardar las operaciones lógicas con la base de datos se suele crear un servicio, que autoimplemente los repositorios y entidades
+necesarias. Aquí tenemos un ejemplo de un servicio con operaciones básicas, como serían añadir una persona, modificarla, borrarla , buscar todas 
+las personas o buscar por id.
+```
+@Service
+public class PersonaServiceDB implements PersonaService {
+	
+	@Autowired
+	private PersonaRepository repositorio;
+
+	@Override
+	public Persona add(Empleado p) {
+		return repositorio.save(p);
+	}
+
+	@Override
+	public List<Persona> findAll() {
+		return repositorio.findAll();
+	}
+
+	@Override
+	public Persona findById(long id) {
+		return repositorio.findById(id).orElse(null);
+	}
+
+	@Override
+	public Persona edit(Persona p) {
+		return repositorio.save(p);
+	}
+	
+	public void delete(Persona p) {
+		repositorio.delete(p);
+	}
+
+}
+```
+Para que la conexión a la base de datos funcione necesitamos incorporar los drivers. En mi caso lo hago desde el archivo properties:
+```
+spring.datasource.url=jdbc:localhost:1433/dbejemplo
+spring.datasource.username=sa
+spring.datasource.password=1234
+```
+
+#### Consultas básicas
+
+Existen varios tipos.
+-Derivadas del nombre del método. Métodos que usan una nomencaltura concreta (findBy,readAll etc) más el atributo de entidad que quieren buscar. Ejemplo:
+```
+List<Persona>findByName()
+```
+Se puede complicar las consultas con ands, order by, distinct etc.
+
+```
+List<Persona>findByNameAndSurname();
+List<Persona> findByNameContainsIgnoreCaseOrEmailContainsIgnoreCaseOrTelephoneContainsIgnoreCase(String name, String email, String telephone);
+```
+Declarando así los métodos, Spring Data se encarga de autogenerar la consulta correspondiente que actue sobre la base de datos.
+
+
