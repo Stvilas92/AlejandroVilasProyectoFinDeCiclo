@@ -1522,8 +1522,11 @@ spring.datasource.password=1234
 ```
 
 #### Consultas básicas
+#### Otras consultas
+Pongo los dos videos juntos , ya que así se explican todos los tipos de consultas que se pueden hacer, las cuales se explican en 
+los dos videos. El primer tipo de consulta se explica en todo el primer video.
 
-Existen varios tipos.
+Existen varios tipos de formas de hacer consultas:
 -Derivadas del nombre del método. Métodos que usan una nomencaltura concreta (findBy,readAll etc) más el atributo de entidad que quieren buscar. Ejemplo:
 ```
 List<Persona>findByName()
@@ -1536,4 +1539,22 @@ List<Persona> findByNameContainsIgnoreCaseOrEmailContainsIgnoreCaseOrTelephoneCo
 ```
 Declarando así los métodos, Spring Data se encarga de autogenerar la consulta correspondiente que actue sobre la base de datos.
 
+-Consultas con el tag @Query. Con el tag query, que pondremos encima del método que ejecute la consulta, tendremos que poner entre 
+parentesis la consulta que queramos que se ejecute. Una vez llamemos al método, ejecutará la consulta señalada con el tag @Query.
+```
+@Query("select * from Persona")
+	List<Persona> findAllPersona(String input);
 
+@Query("select p from Persona p where lower(p.name) like %?1% or lower(p.email) like %?1% or lower(p.telephone) like %?1%")
+	List<Persona> findByNameMailOrPhone(String input);
+```
+
+-QueryDSL, framework que permite la construcción de consultas. Utiliza la interfaz _QuerydslPredicateExecutor_, la cual nos permite el uso
+de predicados para hacer consultas.
+-QueryByExample, se crea un objeto de ejemplo que se usa para buscar el resto de objetos que tengan los mismos campos que él, o que cumplan
+ciertos patrones en el caso de las cadenas de texto.
+```
+Persona p = new Persona();
+p.setTelephone("183745");
+List<Persona> repositorio.findAll(p);
+```
