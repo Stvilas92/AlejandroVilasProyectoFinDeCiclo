@@ -921,7 +921,7 @@ Y ya estaría la aplicación montada. Muy importante acordarse de especificar la
   en el controlador tiene que haber otro método para modificar datos que lleven a una lógica de negocio distinta a la de crear
   datos.
   
-##14/04/2020
+## 14/04/2020
 
 #### Validación de datos
 Se pueden validar los datos que recibimos de un formulario mediante tags de validación . Los más comunes son:
@@ -1558,3 +1558,479 @@ Persona p = new Persona();
 p.setTelephone("183745");
 List<Persona> repositorio.findAll(p);
 ```
+## 19/04/2020
+
+#### Introducción al proyecto
+Hoy voy a finalizar el curso de Spring Boot y Srping MVC, haciendo el proyecto final de la aplicación. El proyecto consistirá en una
+aplicación sencilla de compras de segunda mano. Tendremos tres modelos de datos; producto , usuarios y compra.
+Tendrá las funcionalidades tipicas de una tienda online, usuarios que se registren, carrito de compra etc. Se usará todo lo visto en este curso.
+
+
+#### Creación de entidades 
+Creamos las entidades producto , usuarios y compra, como hemos venido haciendo con el resto de entidades. Las entidades compra y usuario
+tendrán una variable fecha con lo que usarán el tag @EnableListeners para que se rellenen automáticamente. Aprovechamos para hacer
+la clase de configuración.
+Entidad Usuario
+```
+@Entity
+@EntityListeners(AuditingEntityListener.class)
+public class Usuario {
+
+    @Id
+    @GeneratedValue
+    private long id;
+    private String nombre;
+    private String apellidos;
+    private String avatar;
+    private String email;
+    private String password;
+
+    @CreatedDate
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date date;
+```
+
+Entidad Compra
+``` 
+@Entity
+@EntityListeners(AuditingEntityListener.class)
+public class Compra {
+
+    @Id
+    @GeneratedValue
+    private Long id;
+
+    @CreatedDate
+    @Temporal(TemporalType.TIMESTAMP)
+    private Date date;
+
+    @ManyToOne
+    Usuario usuario;
+```
+
+Entidad Producto
+``` 
+@Entity
+public class Producto {
+
+    @Id
+    @GeneratedValue
+    private long id;
+    private float precio;
+    private String imagen;
+    private String nombre;
+
+    @ManyToOne
+    private Usuario usuario;
+
+    @ManyToOne
+    private Compra compra;
+```
+
+Configuración
+```
+@Configuration
+@EnableJpaAuditing
+public class ConfigurationAuditory {
+}
+```
+
+#### Creación de repositorios
+Creamos los repositorios para manejar cada entidad.
+En el caso de compra, tendremos una función para buscar por usuario.
+```
+public interface compraRespository extends JpaRepository<Compra,Long> {
+    List<Compra> findAllByUsuario(Usuario usuario);
+}
+```
+
+En el caso de usuario, tendremos una función para buscar por email.
+```
+public interface usarioRepository extends JpaRepository<Usuario,Long> {
+    Usuario findFirstByEmail(String email);
+}
+```
+
+En el caso de producto, tendremos varias funciones.
+- Buscar por usuario.
+- Buscar por compra.
+- Buscar por compra si es nula.
+- Buscar por una cadena de caractéres dentro de nombre.
+- Buscar por una cadena de caractéres dentro de nombre y un usuario.
+```
+public interface productoRepository extends JpaRepository<Producto,Long>{
+
+        List<Producto> findByUsuario(Usuario usuario);
+
+        List<Producto> findByCompra(Compra compra);
+
+        List<Producto> findByCompraIsNull();
+
+        List<Producto> findByNombreContainsIgnoreCaseAndCompraIsNull(String nombre);
+
+        List<Producto> findByNombreContainsIgnoreCaseAndPropietario(String nombre, Usuario usuario);
+}
+```
+
+#### Aplicación de la seguridad.
+A parte de la interfaz _WebSecurityConfigurerAdapter_ vista con anterioridad, usaremos otra interfaz para localizar a los usuarios
+que están guardados en nuestra base de datos, llamada _UserDetailsService_. Craremos una clase que gestione la implementación de dicha
+interfaz.
+```
+@Service("userDetailsService")
+public class UserDetailsServiceImp implements UserDetailsService {
+    @Autowired
+    UsuarioRepository usuarioRepository;
+
+    @Override
+    public UserDetails loadUserByUsername(String s) throws UsernameNotFoundException {
+        Usuario usuario = usuarioRepository.findFirstByEmail(s);
+
+        User.UserBuilder builder = null;
+
+        if (usuario != null) {
+            builder = User.withUsername(s);
+            builder.disabled(false);
+            builder.password(usuario.getPassword());
+            builder.authorities(new SimpleGrantedAuthority("ROLE_USER"));
+        } else {
+            throw new UsernameNotFoundException("Usuario no encontrado");
+        }
+
+        return builder.build();
+    }
+}
+```
+Esta clase se encargrá de utilizar un usuario creado en la base de datos (a través de un repositorio utilizando el email como nombre)
+, para autencarnos en la aplicación. Si no encuentra al usuario, lanzará una excepción hacia arriba.
+Ahora crearems la clase de seguridad tal y como hicimos anteriormente en el curso, poniendo la seguridad http habitual y quitando la 
+seguridad _csrf_ . En la parte de auth , hacemos refencia al método de _UserDetails_ creado anteriormente. Por último, utilizaremos el
+bean _BCryptPasswordEncoder_ proporcionado por Spring para encriptar la contraseña del usuario.
+``` 
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+    @Autowired
+    UserDetailsService userDetailsService;
+
+    @Bean
+    public BCryptPasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+        auth.userDetailsService(userDetailsService).passwordEncoder(passwordEncoder());
+    }
+
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http
+                .authorizeRequests()
+                .antMatchers("/", "/webjars/**", "/css/**", "/h2-console/**", "/public/**", "/auth/**", "/files/**").permitAll()
+                .anyRequest().authenticated()
+                .and()
+                .formLogin()
+                .loginPage("/auth/login")
+                .defaultSuccessUrl("/public/index", true)
+                .loginProcessingUrl("/auth/login-post")
+                .permitAll()
+                .and()
+                .logout()
+                .logoutUrl("/auth/logout")
+                .logoutSuccessUrl("/public/index");
+
+        http.csrf().disable();
+        http.headers().frameOptions().disable();
+
+    }
+}
+```
+
+#### Creación de servicios
+Crearemos un servicio para usuarios, otro para productos y otro para compras. Simplemente implementarán los métodos CRUD declarados en 
+los repositorios.
+Compra. Al insertar una compra, tendremos que insertar un usuario, puesto que las entidades están realcionadas.
+```
+@Service
+public class CompraServicio {
+	
+	@Autowired
+	CompraRepository repositorio;
+	
+	@Autowired
+	ProductoServicio productoServicio;
+	
+	public Compra insertar(Compra c, Usuario u) {
+		c.setUsuario(u);
+		return repositorio.save(c);
+	}
+	
+	public Compra insertar(Compra c) {
+		return repositorio.save(c);
+	}
+	
+	public Producto addProductoCompra(Producto p, Compra c) {
+		p.setCompra(c);
+		return productoServicio.editar(p);
+	}
+	
+	public Compra buscarPorId(long id) {
+		return repositorio.findById(id).orElse(null);
+	}
+	
+	public List<Compra> todas() {
+		return repositorio.findAll();
+	}
+	
+	public List<Compra> porUsuario(Usuario u) {
+		return repositorio.findByUsuario(u);
+	}
+	
+}
+```
+Usuario. Añadimos también un password encoder, para cuando almacenemos un usuario en la base de datos, hay que encriptar la contraseña
+para almacenarla.
+```
+@Service
+public class UsuarioServicio {
+	
+	@Autowired
+	UsuarioRepository repositorio;
+	
+	@Autowired
+	BCryptPasswordEncoder passwordEncoder;
+	
+	
+	public Usuario registrar(Usuario u) {
+		u.setPassword(passwordEncoder.encode(u.getPassword()));
+		return repositorio.save(u);
+	}
+	
+	public Usuario findById(long id) {
+		return repositorio.findById(id).orElse(null);
+	}
+	
+	public Usuario buscarPorEmail(String email) {
+		return repositorio.findFirstByEmail(email);
+	}
+}
+```
+Producto. Insertamos un metodó a mayores para buscar con id.
+```
+@Service
+public class ProductoServicio {
+	
+	@Autowired
+	ProductoRepository repositorio;
+	
+	@Autowired
+	StorageService storageService;
+	
+	
+	public Producto insertar(Producto p) {
+		return repositorio.save(p);
+	}
+	
+	public void borrar(long id) {
+		repositorio.deleteById(id);
+	}
+	
+	public void borrar(Producto p) {
+		if (!p.getImagen().isEmpty())
+			storageService.delete(p.getImagen());
+		repositorio.delete(p);
+	}
+	
+	public Producto editar(Producto p) {
+		return repositorio.save(p);
+	}
+	
+	public Producto findById(long id) {
+		return repositorio.findById(id).orElse(null);
+	}
+	
+	public List<Producto> findAll() {
+		return repositorio.findAll();
+	}
+	
+	public List<Producto> productosDeUnPropietario(Usuario u) {
+		return repositorio.findByPropietario(u);
+	}
+	
+	public List<Producto> productosDeUnaCompra(Compra c) {
+		return repositorio.findByCompra(c);
+	}
+	
+	public List<Producto> productosSinVender() {
+		return repositorio.findByCompraIsNull();
+	}
+	
+	public List<Producto> buscar(String query) {
+		return repositorio.findByNombreContainsIgnoreCaseAndCompraIsNull(query);
+	}
+	
+	public List<Producto> buscarMisProductos(String query, Usuario u) {
+		return repositorio.findByNombreContainsIgnoreCaseAndUsuario(query,u);
+	}
+	
+	public List<Producto> variosPorId(List<Long> ids) {
+		return repositorio.findAllById(ids);
+	}
+
+}
+```
+
+#### Plantillas a utilizar
+Usaremos las plantillas proporcionadas por OpenWebinars.
+
+#### Login y registro
+Crearemos un controlador que manejr el login de un usuario y el registro. Lo haremos a través del servicio de usuarios creado anteriormente
+```
+@Controller
+public class LoginController {
+
+    @Autowired
+    UsuarioService usuarioServicio;
+
+    @GetMapping("/")
+    public String welcome() {
+        return "redirect:/public/";
+    }
+
+
+    @GetMapping("/auth/login")
+    public String login(Model model) {
+        model.addAttribute("usuario", new Usuario());
+        return "login";
+    }
+
+
+    @PostMapping("/auth/register")
+    public String register(@ModelAttribute Usuario usuario, @RequestParam("file") MultipartFile file) {
+        usuarioServicio.registrar(usuario);
+        return "redirect:/auth/login";
+    }
+
+}
+```
+Como podemos ver , el servicio creado de usuarios es el que maneja la gestión del mismo, registrando nuevos usuarios. En caso de registro
+nos redirige a la página de login.
+Si alguien accede al raiz de nuestro sitio lo guiaremos al listado de productos que haremos posteriormente.
+
+#### Listado de productos
+Para ello creamos un nuevo controlador que liste los productos existentes en nuestra base de datos. Será como el controlador que maneje
+la parte pública de la aplicación.
+Para ello usaremos el servicio de productos creado anteriormente.
+``` 
+@Controller
+@RequestMapping("/public")
+public class ZonaPublicaController {
+	
+	@Autowired
+	ProductoServicio productoServicio;
+	
+	
+	@ModelAttribute("productos")
+	public List<Producto> productosNoVendidos() {
+		return productoServicio.productosSinVender();
+	}
+	
+	
+	@GetMapping({"/", "/index"})
+	public String index(Model model, @RequestParam(name="q", required=false) String query) {
+		if (query != null)
+			model.addAttribute("productos", productoServicio.buscar(query));
+		return "index";
+	}
+	
+	@GetMapping("/producto/{id}")
+	public String showProduct(Model model, @PathVariable Long id) {
+		Producto result = productoServicio.findById(id); 
+		if (result != null) {
+			model.addAttribute("producto", result);
+			return "producto";
+		}
+		return "redirect:/public";
+	}
+}
+```
+-_productosNoVendidos_ , carga cuando se inicie el controlador, los productos no vendidos.
+-_index_ busca un producto por query, auqnue la query no es obligatoria. Si la query es nula, tira del listado de productos sin vender.
+-_showProduct_ muestra un producto por id.
+
+
+#### Comprar y carrito.
+#### Finalización de la compra y factura
+Junto los dos videos ya que se centran los dos en el mismo controlador.
+Crearemos un controller que usara los servicios de los tres modelos, Usuario, Productoy Compra.
+También manejaremos la sesión HTTP para evitar la pérdida de datos, con el bean autoinyectado _HTTPSession_ .
+
+
+
+
+
+#### Gestión de productos
+Nos centramos en crear el controller de productos.
+```
+@Controller
+@RequestMapping("/app")
+public class ProductosController {
+
+    @Autowired
+    ProductoService productoServicio;
+
+    @Autowired
+    UsuarioService usuarioServicio;
+
+    private Usuario usuario;
+
+    @ModelAttribute("misproductos")
+    public List<Producto> misProductos() {
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+        usuario = usuarioServicio.buscarPorEmail(email);
+        return productoServicio.productosDeUnPropietario(usuario);
+    }
+
+    @GetMapping("/misproductos")
+    public String list(Model model, @RequestParam(name = "q", required = false) String query) {
+        if (query != null)
+            model.addAttribute("misproductos", productoServicio.buscarMisProductos(query, usuario));
+
+        return "app/producto/lista";
+    }
+
+    @GetMapping("/misproductos/{id}/eliminar")
+    public String eliminar(@PathVariable Long id) {
+        Producto p = productoServicio.findById(id);
+        if (p.getCompra() == null)
+            productoServicio.borrar(p);
+        return "redirect:/app/misproductos";
+    }
+
+    @GetMapping("/producto/nuevo")
+    public String nuevoProductoForm(Model model) {
+        model.addAttribute("producto", new Producto());
+        return "app/producto/form";
+    }
+
+    @PostMapping("/producto/nuevo/submit")
+    public String nuevoProductoSubmit(@ModelAttribute Producto producto, @RequestParam("file") MultipartFile file) {
+        producto.setUsuario(usuario);
+        productoServicio.insertar(producto);
+        return "redirect:/app/misproductos";
+    }
+}
+```
+Tendremos los siguientes métodos:
+-_misProductos_ , carga cuando se inicie el controlador, los productos de un usuario.
+-_list_ lista productos de un usuario. Puede hacerlo en base a una query, pero no es obligatorio.
+-_eliminar_ elimina un producto de un usuario.
+-_nuevoProductoForm_ Crea un nuevo producto desde el formulario de la aplicación.
+-_nuevoProductoSubmit_  Añade un producto creado a la base de datos.
+
+#### Subida de imágenes y gestión de almacenamiento.
+
+
+
