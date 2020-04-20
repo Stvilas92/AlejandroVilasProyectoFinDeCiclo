@@ -1967,8 +1967,114 @@ Junto los dos videos ya que se centran los dos en el mismo controlador.
 Crearemos un controller que usara los servicios de los tres modelos, Usuario, Productoy Compra.
 También manejaremos la sesión HTTP para evitar la pérdida de datos, con el bean autoinyectado _HTTPSession_ .
 
-
-
+```
+@Controller
+@RequestMapping("/app")
+public class CompraController {
+	@Autowired
+	CompraServicio compraServicio;
+	@Autowired
+	ProductoServicio productoServicio;
+	@Autowired
+	UsuarioServicio usuarioServicio;
+	@Autowired
+	HttpSession session;
+	
+	private Usuario usuario;
+	
+	@ModelAttribute("carrito")
+	public List<Producto> productosCarrito() {
+		List<Long> contenido = (List<Long>) session.getAttribute("carrito");
+		return (contenido == null) ? null : productoServicio.variosPorId(contenido);
+	}
+	
+	@ModelAttribute("total_carrito")
+	public Double totalCarrito() {
+		List<Producto> productosCarrito = productosCarrito();
+		if (productosCarrito != null)
+			return productosCarrito.stream()
+				.mapToDouble(p -> p.getPrecio())
+				.sum();
+		return 0.0;
+	}
+	
+	@ModelAttribute("mis_compras")
+	public List<Compra> misCompras() {
+		String email = SecurityContextHolder.getContext().getAuthentication().getName();
+		usuario = usuarioServicio.buscarPorEmail(email);
+		return compraServicio.porPropietario(usuario);
+	}
+	
+	
+	@GetMapping("/carrito")
+	public String verCarrito(Model model) {
+		return "app/compra/carrito";
+	}
+	
+	@GetMapping("/carrito/add/{id}")
+	public String addCarrito(Model model, @PathVariable Long id) {
+		List<Long> contenido = (List<Long>) session.getAttribute("carrito");
+		if (contenido == null)
+			contenido = new ArrayList<>();
+		if (!contenido.contains(id))
+			contenido.add(id);
+		session.setAttribute("carrito", contenido);
+		return "redirect:/app/carrito";
+	}
+	
+	@GetMapping("/carrito/eliminar/{id}")
+	public String borrarDeCarrito(Model model, @PathVariable Long id) {
+		List<Long> contenido = (List<Long>) session.getAttribute("carrito");
+		if (contenido == null)
+			return "redirect:/public";
+		contenido.remove(id);
+		if (contenido.isEmpty())
+			session.removeAttribute("carrito");
+		else
+			session.setAttribute("carrito", contenido);
+		return "redirect:/app/carrito";
+		
+	}
+	
+	@GetMapping("/carrito/finalizar")
+	public String checkout() {
+		List<Long> contenido = (List<Long>) session.getAttribute("carrito");
+		if (contenido == null)
+			return "redirect:/public";
+		
+		List<Producto> productos = productosCarrito();
+		
+		Compra c = compraServicio.insertar(new Compra(), usuario);
+		
+		productos.forEach(p -> compraServicio.addProductoCompra(p, c));
+		session.removeAttribute("carrito");
+		
+		return "redirect:/app/compra/factura/"+c.getId();
+		
+	}
+	
+	@GetMapping("/miscompras")
+	public String verMisCompras(Model model) {
+		return "/app/compra/listado";
+	}
+	
+	@GetMapping("/compra/factura/{id}")
+	public String factura(Model model, @PathVariable Long id) {
+		Compra c = compraServicio.buscarPorId(id);
+		List<Producto> productos = productoServicio.productosDeUnaCompra(c);
+		model.addAttribute("productos", productos);
+		model.addAttribute("compra", c);
+		model.addAttribute("total_compra", productos.stream().mapToDouble(p -> p.getPrecio()).sum());
+		return "/app/compra/factura";
+	}
+```
+Tenemos las siguientes peticiones:
+- _verCarrito_ , nos permite ver el carrito actual .
+- _addCarrito_ , añade un producto al carrito.
+- _borrarDeCarrito_ , borra un producto del carrito. Si llega a cero, nos avisa de que no tenemos ninguna compra hecha.
+- _checkout_ , nos muestra en la vista factura, como sería la factura actual si realizásemos la compra.
+- _verMisCompras_ ,  .
+- _factura_ , nos crea una factura con los productos comprados y el precion en la vista factura.
 
 
 #### Gestión de productos
@@ -2031,6 +2137,34 @@ Tendremos los siguientes métodos:
 -_nuevoProductoSubmit_  Añade un producto creado a la base de datos.
 
 #### Subida de imágenes y gestión de almacenamiento.
+La subida de imágenes, se harán con el servicio de almacenamiento de ficheros visto anteriormente. El servicio será idéntico al mostrado
+anteriormente, llamado _StorageService_.
+Como el único modelo que utiliza imágenes es el _Producto_ , lo que hay que gestionar es en _ProductoService_, el borrado de datos, ya que 
+la imágen se inserta automáticamente desde el controller, que también debemos modificar. Así que dentro de el servicio de productos añadimos el servicio de almacenamiento
+e insertamos un método para borrar.
 
-
+```
+@Autowired
+	StorageService storageService;
+	
+	public void borrar(Producto p) {
+		if (!p.getImagen().isEmpty())
+			storageService.delete(p.getImagen());
+		repositorio.delete(p);
+	}
+```
+Por último en el controlador de productos, en el método de creación añadimos el código para que cree una imagen.
+```
+@PostMapping("/producto/nuevo/submit")
+	public String nuevoProductoSubmit(@ModelAttribute Producto producto, @RequestParam("file") MultipartFile file) {		
+		if (!file.isEmpty()) {
+			String imagen = storageService.store(file);
+			producto.setImagen(MvcUriComponentsBuilder
+					.fromMethodName(FilesController.class, "serveFile", imagen).build().toUriString());
+		}
+		producto.setPropietario(usuario);
+		productoServicio.insertar(producto);
+		return "redirect:/app/misproductos";
+	}
+```
 
