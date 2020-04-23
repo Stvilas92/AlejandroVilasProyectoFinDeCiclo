@@ -2168,3 +2168,62 @@ Por último en el controlador de productos, en el método de creación añadimos
 	}
 ```
 
+## 23/04/2020
+
+Hoy empecé el tercer curso de la carrera _Curso de desarrollo de una API REST con Spring Boot_ .
+
+#### Presentación del curso
+Nos presenta el curso y los conocimientos mínimos que debemos aprender. Además, nos presenta lo que vamos a aprender.
+
+#### ¿Qué es un servicio REST?
+Nos explica que es un servicio Rest, como se usa el protocolo HTTP dentro de REST, de donde surgió la tecnología REST y sus ventajas frente
+al protocolo RCP.
+Estos conceptos estan explicados en su mayoría en la asignatura de Acceso a Datos.
+Una de las principales ventajas de REST es su uso en multiplataforma, solo necesitamos un lenguaje que nos permita usar una librería REST 
+para crear nuestro propio servidor y que esté a la escucha de peticiones HTTP.
+
+#### Protocolo HTTP
+#### Algunos elementos de HTTP
+En estos dos videos se nos explica el funcionamiento y elementos de algunos elementos HTTP.
+Derivado de  _Hipertext Transfer Transimsion Protocol_, es un protocolo sin estados con un esquema petición respuesta.
+El formato del mensaje en el protocolo HTTP es el mismo para peticiones como para respuesta, y cuenta de una cabecera y un curepo.
+Los métodos mas conocidos son:
+- _GET_, recupera un recurso del servidor.
+- _POST_, envía un recurso al servidor para que sea procesado.
+- _PUT_, actualiza un recurso del servidor. (Ojo solo actualizar, si deseamos crear datos necesitamos usar POST).
+- _DELETE_, elimina un recurso especificado en el servidor.
+También existe otros recursos menos utilizados como _HEAD_ , _OPTIONS_ o _PATH_
+
+Algunos de los códigos de respuesta son.
+-_2XX_ peticiones con éxito
+-_4XX_ error en el lado del cliente
+-_5XX_ error en el aldo del servidor
+
+#### Nuestro entorno de desarrollo
+Nos explica el entorno de desarrollo que vamos a usar en este curso. En el curso van a utilizar el IDE _Spring Tool Suite_ . Yo
+voy a usar el IDE _Intell IJ_ puesto que es el que uso en el trabajo, y además, a la hora de  crear APIs REST, las creamos como 
+un proyecto Maven, a traves del cual, importamos las librerías necesarias para gestionar Spring.
+También usaran Postman para testear las APIs y hacer peticions. Yo utilizaré Rester.
+
+#### Uso de librería Lombok
+Lombok es una librería de generación de código (Getters setters etc), que usaremos para ahorrar trabajo de escritura de código.
+La implataré con su dependencia maven.
+```
+<dependency>
+    <groupId>org.projectlombok</groupId>
+    <artifactId>lombok</artifactId>
+    <version>1.18.10</version>
+    <scope>provided</scope>
+</dependency>
+```
+La principal anotación Lombok es _@Data_, que si la ponemos al principio de una clase, nos autogenera getters, setters, equals, hashCode,
+toString y un constructor vacio.
+
+#### Soporte de Spring Boot para servicios REST
+
+A través de desarrolar REST con Spring Boot, tendremos todas las ventajas de Spring aplicada a las APIs REST, como puede ser la inyección
+de dependecias o seguridad. También incorpora tags orientados a REST como @RestController. 
+Spring Boot incormpora algunas herramientas como Jackson-2 , que se encarga del mapeo de objetos a JSON.
+También nos permite consumir e interactuar con otras apis con RestTemplate.
+
+
