@@ -2192,12 +2192,13 @@ Los métodos mas conocidos son:
 - _POST_, envía un recurso al servidor para que sea procesado.
 - _PUT_, actualiza un recurso del servidor. (Ojo solo actualizar, si deseamos crear datos necesitamos usar POST).
 - _DELETE_, elimina un recurso especificado en el servidor.
+
 También existe otros recursos menos utilizados como _HEAD_ , _OPTIONS_ o _PATH_
 
 Algunos de los códigos de respuesta son.
--_2XX_ peticiones con éxito
--_4XX_ error en el lado del cliente
--_5XX_ error en el aldo del servidor
+- _2XX_ peticiones con éxito
+- _4XX_ error en el lado del cliente
+- _5XX_ error en el aldo del servidor
 
 #### Nuestro entorno de desarrollo
 Nos explica el entorno de desarrollo que vamos a usar en este curso. En el curso van a utilizar el IDE _Spring Tool Suite_ . Yo
