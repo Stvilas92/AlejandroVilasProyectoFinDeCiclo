@@ -2227,4 +2227,108 @@ de dependecias o seguridad. También incorpora tags orientados a REST como @Rest
 Spring Boot incormpora algunas herramientas como Jackson-2 , que se encarga del mapeo de objetos a JSON.
 También nos permite consumir e interactuar con otras apis con RestTemplate.
 
+## 24/04/2020
 
+Hoy he empezado con la parte de _Mi primer servicio REST con Spring Boot_ , en la que haremos un servicio REST básico para ver las 
+funcionalidades de Spring Boot en REST.
+
+#### Mi primer servicio REST
+
+Montamos la estructura básica del proyecto (Método main, librerias maven, modelos y controladores).
+En el caso del controlador usamos _@RestController_ en vez de _@Controller_.
+```
+@RestControllerpublic class GreetingController { 
+	//Resto del código
+	@GetMapping("/greeting")public Greeting greeting( @RequestParam(value="name", defaultValue="World") String name) {
+		return new Greeting(counter.incrementAndGet(),String.format(template, name));     
+	}
+} 
+```
+En el caso de el método, la repuesta, pasa por un filtro llamado _HttpMessageConverter_ que lo transforma en JSON.
+
+#### Puesta en marcha de la aplicación.
+
+La aplicación se debe lanzar desde IntellIj con la configuración de _Aplication_ y especificando la clase principal. También hay que tener 
+cuidado con si estamos especificando el puerto donde se lanza.
+También se puede lanzar desde el terminal del proyecto usando comandos maven.
+```
+mvn clean
+mvn install
+mvn spring-boot:run
+```
+Obviamente hay que tener instalado maven en local. El comando _clean_ actuliza y carga los cambios del pryecto. El comando _install_ ,
+instala la aplicación en local. Por último _spring-boot:run_ lanza la aplicación.
+
+#### Estructura de las rutas
+Aquí se nos explica la estructura del proyecto.
+Manejaremos un modelo llamado _producto_ que tendrá un id, un nombre y un precio.
+Se creará también un repositorio e insertaremos datos de ejemplo.
+En cuanto a la estructura de las rutas
+- /producto GET. Obtendrá todos los productos
+- /producto/{id} GET. Obtendrá un producto por su id
+- /producto POST . Creará un nuevo prducto.
+- /producto/{id} PUT. Actualizará un producto por su id
+- /producto/{id} DELETE. Borrará un producto por su id
+
+El modelo _producto_.
+```
+@Data 
+@Entity
+public class Producto {
+
+	@Id @GeneratedValue
+	private Long id;
+	
+	private String nombre;
+	
+	private float precio;
+	
+}
+```
+ El controlador.
+ ```
+@RestController
+public class ProductoController {
+
+	private final ProductoRepositorio productoRepositorio;
+
+	@GetMapping("/producto")
+	public List<Producto> obtenerTodos() {
+		return productoRepositorio.findAll();
+	}
+
+	@GetMapping("/producto/{id}")
+	public Producto obtenerUno(@PathVariable Long id) {
+		return productoRepositorio.findById(id).orElse(null);
+	}
+
+	@PostMapping("/producto")
+	public Producto nuevoProducto(@RequestBody Producto nuevo) {
+		return productoRepositorio.save(nuevo);
+	}
+
+	@PutMapping("/producto/{id}")
+	public Producto editarProducto(@RequestBody Producto editar, @PathVariable Long id) {
+		if (productoRepositorio.existsById(id)) {
+			editar.setId(id);
+			return productoRepositorio.save(editar);
+		} else {
+			return null;
+		}
+	}
+	
+	@DeleteMapping("/producto/{id}")
+	public Producto borrarProducto(@PathVariable Long id) {
+		if (productoRepositorio.existsById(id)) {
+			Producto result = productoRepositorio.findById(id).get();
+			productoRepositorio.deleteById(id);
+			return result;
+		} else
+			return null;
+	}
+
+}
+ ```
+ 
+ Como podemos ver no construimos la repuesta con un response (Para gestionar los códigos HTTP), sino que devolvemos el objeto sobre el
+ que interactuamos. Por lo tanto, la respuesta HTTP siempre va a ser OK.
