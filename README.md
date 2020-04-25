@@ -2332,3 +2332,129 @@ public class ProductoController {
  
  Como podemos ver no construimos la repuesta con un response (Para gestionar los códigos HTTP), sino que devolvemos el objeto sobre el
  que interactuamos. Por lo tanto, la respuesta HTTP siempre va a ser OK.
+
+## 25/04/2020
+#### Clase y anotaciones de Srpring Rest
+- _ResponseEntity_ , usada para manejar las repuestas de la API Rest, hereda de _HttpEntity_. La respuesta se compone de un cuerpo y una 
+cabecera. Vamos a aplicarlo al servicio anterior.
+
+```
+@RestController
+public class ProductoController {
+
+	private final ProductoRepositorio productoRepositorio;
+
+	@GetMapping("/producto")
+	public ResponseEntity<?> obtenerTodos() {
+		List<Producto> result = productoRepositorio.findAll();
+
+		if (result.isEmpty()) {
+			return ResponseEntity.notFound().build();
+		} else {
+			return ResponseEntity.ok(result);
+		}
+
+	}
+
+	@GetMapping("/producto/{id}")
+	public ResponseEntity<?> obtenerUno(@PathVariable Long id) {
+		Producto result = productoRepositorio.findById(id).orElse(null);
+		if (result == null)
+			return ResponseEntity.notFound().build();
+		else
+			return ResponseEntity.ok(result);
+	}
+	
+	@PostMapping("/producto")
+	public ResponseEntity<?> nuevoProducto(@RequestBody Producto nuevo) {
+		Producto saved = productoRepositorio.save(nuevo);
+		return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+	}
+
+	@PutMapping("/producto/{id}")
+	public ResponseEntity<?> editarProducto(@RequestBody Producto editar, @PathVariable Long id) {
+
+		return productoRepositorio.findById(id).map(p -> {
+			p.setNombre(editar.getNombre());
+			p.setPrecio(editar.getPrecio());
+			return ResponseEntity.ok(productoRepositorio.save(p));
+		}).orElseGet(() -> {
+			return ResponseEntity.notFound().build();
+		});
+	}
+
+	@DeleteMapping("/producto/{id}")
+	public ResponseEntity<?> borrarProducto(@PathVariable Long id) {
+		productoRepositorio.deleteById(id);
+		return ResponseEntity.noContent().build();
+	}
+
+}
+```
+Podemos observar como con las responses, mandamos diferentes informaciones del resultado de su petición que el usuario final leera 
+como un código HTTP. Por ejemplo, si hace la operación POST para guardar un producto, recibirán un código 201 (Created).
+Como podemos ver, se puede construir el cuerpo de una respuesta pasandole como argumento el objeto que queremos devolver, el cual se
+transformará automáticamente a json. Podemos ver como en los GET se hace ese proces.
+Todavía no tenemos gestión de excepciones, como petición erronea , se darán más adelante en el curso.
+
+#### Uso de Data Transfer Object (DTO)
+Las DTO son objetos POJO, son clases  que son intermediarias entre la aplicacióny una entidad de base de datos. No puede tener nada
+de lógica de negocio, y debe de ser serializable.
+Imaginemos una entidad Producto(nombre , id,categoría), y una entidad Categoría (Nombre,id, descripcion).
+Para relacionar las dos entidades poedmos crear un DTO para productos con nombre, id y id de categoría, y nombre de categoría.
+Los DTO dependerán de como querramos usar nuestros datos en la aplicación.
+
+#### Implementando DTO con Model Mapper
+_ModelMapper_ facilita la creación de DTO de forma más dinámica. Tenemos que implementar su dependencia y un bean que decuelva el model
+mapper que realice las transformaciones.
+```
+<dependency>
+	<groupId>org.modelmapper</groupId>
+        <artifactId>modelmapper</artifactId>
+        <version>2.3.5</version>
+</dependency>
+```
+```
+public ModelMapper modelMapper(){
+	return new ModelMapper();
+}
+```
+Vamos a crear un DTO de un producto realcionado con el nombre de una categoría.
+```
+public class ProductoDTO {
+	private long id;
+	private String nombre;
+	private String categoriaNombre;
+}
+```
+Para transformar productos en _ProductosDTO_ , usaremos como dijimos _ModelMapper_. Crearemos un componente para ello.
+```
+@Component
+public class ProductoDTOConverter {
+	
+	private final ModelMapper modelMapper;
+	public ProductoDTO convertToDto(Producto producto) {
+		return modelMapper.map(producto, ProductoDTO.class);
+		
+	}
+
+}
+```
+Como podemos ver, es una clase muy sencilla y con my poco código y fácil de leer.
+Ahora implementaremos esta funcionalidad en el método GET del controlador.
+```
+@GetMapping("/producto")
+	public ResponseEntity<?> obtenerTodos() {
+		List<Producto> result = productoRepositorio.findAll();
+
+		if (result.isEmpty()) {
+			return ResponseEntity.notFound().build();
+		} else {
+
+			List<ProductoDTO> dtoList = result.stream().map(productoDTOConverter::convertToDto)
+					.collect(Collectors.toList());
+
+			return ResponseEntity.ok(dtoList);
+		}
+	}
+```
