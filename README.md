@@ -2458,3 +2458,84 @@ Ahora implementaremos esta funcionalidad en el método GET del controlador.
 		}
 	}
 ```
+
+## 26/04/2020
+
+Hoy empiezo con la parte de manejo de errores en una API REST.
+
+##### Manejo básico de errores.
+
+Podemos crear excepciones y ligarlas a un código de respuesta con el tag _ResponseStatus_ .
+```
+@ResponseStatus(HttpStatus.NOT_FOUND)
+public class ProductNotFoundException(){...}
+```` 
+Ahora cuando salte esa excepción , el controlador responderá con un código 404(Not found). En el controlador podremos manejar las 
+de la manera que mas consideremos necesaria, lo importante, es que sepamos que respuesta debe recibir cada error.
+
+#### Modelo de respuesta de un error.
+
+EL modelo de error lo fabrica Spring por defecto con la clase _DefaultErrorAtributes_ . Cuenta con los atributos de fecha, tipo de error,
+mensaje, estado y el _path_ del error(en que ruta se produjo) . 
+También podremos crear modelos de error para añadir o quitar atributos. Haremos una clase POJO que tenga los atributos que querramos.
+Como ejemplo haremos un modelo básico con estado, fecha y mensaje. 
+```
+@Setter
+@Getter
+public class ApiError {
+
+	
+	private HttpStatus estado;
+	@JsonFormat(shape = Shape.STRING, pattern = "dd/MM/yyyy hh:mm:ss")
+	private LocalDateTime fecha;
+	private String mensaje;
+	
+}
+```
+Los tags de getter y setter  son implementados por la librería Lombak, y, lo que hace, es crear automáticamente los métodos getter y 
+setter de todos los atributos de la clase.
+
+#### Manejo de excepciones con @ExceptionHandler
+ El tag _@ExceptionHandler_ controla que se produzca una excepción especificada que se produzca en cualquier método de un controlador
+ y responde al cliente con el modelo de la excepción correspondiente.
+ Vamos a hacer un manejador para _ProductNotFoundException_ .
+ ```
+ @ExceptionHandler(ProductoNotFoundException.class)
+	public ResponseEntity<ApiError> handleProductoNoEncontrado(ProductoNotFoundException ex) {
+		ApiError apiError = new ApiError();
+		apiError.setEstado(HttpStatus.NOT_FOUND);
+		apiError.setFecha(LocalDateTime.now());
+		apiError.setMensaje(ex.getMessage());
+		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(apiError);
+	}
+ ```
+ Si este método lo añadimos a un controlador, todos los errores que produzcan un _ProductNotFoundException_ serán tratados por este método
+, y será el mismo el que gestione la respuesta del servidor.
+
+#### Manejo de errores con @ControllerAdvice I
+#### Manejo de errores con @ControllerAdvice II
+El tag _@ControllerAdvice_ sive para manejar todas las excepciones que se produzcan a nivel aplicación. También se le puede limitar a 
+que se asplique a un o varios controladores específicos.
+Dentro de un _@ControllerAdvice_ se manejan todos los _@ExceptionHandler_ de toda la aplicación , o , en caso de que se hayan especificado,
+de los controladores especificados.
+Usaremos _@RestControllerAdvice_, que lo que hace es unificar _@ControllerAdvice_ y _@ResponseBody_ .
+
+
+```
+@RestControllerAdvice
+public class GlobalControllerAdvice extends ResponseEntityExceptionHandler {
+	
+	@ExceptionHandler(ProductoNotFoundException.class)
+	public ResponseEntity<ApiError> handleProductoNoEncontrado(ProductoNotFoundException ex) {
+		ApiError apiError = new ApiError(HttpStatus.NOT_FOUND, ex.getMessage());
+		return ResponseEntity.status(HttpStatus.NOT_FOUND).body(apiError);
+	}
+}
+```
+
+#### Novedades en Spring 5 : ResponseStatusException
+La excepción _ResponseStatusException_ , es una excepción propia de Spring genérica con una serie de atributos específicos y unida a
+_@ResponseBody_
+, para poder devolver una respuesta estructurada desde servidor.
+
+
