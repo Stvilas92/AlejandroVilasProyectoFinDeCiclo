@@ -2535,7 +2535,65 @@ public class GlobalControllerAdvice extends ResponseEntityExceptionHandler {
 
 #### Novedades en Spring 5 : ResponseStatusException
 La excepción _ResponseStatusException_ , es una excepción propia de Spring genérica con una serie de atributos específicos y unida a
-_@ResponseBody_
-, para poder devolver una respuesta estructurada desde servidor.
+_@ResponseBody_ , para poder devolver una respuesta estructurada desde servidor.
+Es una novedad poco usada y que es da un paso hacia atras , ya que nos quita toda la globalidad ganada con _@ControllerAdvice_ 
+
+## 27/04/2020
+Hoy empiezo la parte de manejo de CORS, subida de ficheros y documentación.
+
+#### ¿Que es CORS y por qué me va a dar problemas?
+CORS( Cross Origin Resource Sharing) es una política de seguridad a nivel de navegadores web. Permite proteger a nuestra API de ataques 
+maliciosos. Por razones de seguridad los navegadores prohiben llamadas AJAX a recursos que residen fuera del origen actual. Esto evita
+por ejemplo, que tengamos dos webs distintas , y que una pudiera hacer solicitudes a la otra.
+CORS utiliza cabeceras HTTP para perimitir al cliente (Navegador),acceder a un servidor de origen diferente al servidor actual.
+
+#### ¿Cómo habilitar a nivel de método?
+Con el tag _@CrossOrigin_, Spring nos permite modificar la seguridad especificando diferentes atributos.
+- _origins_, lista de orígenes permitidos.
+- _methods_, lista de  métodos soportados (GET,POST etc).
+- _maxAge_, duración máxima en segundos de la duración de la caché.
+También tiene otros atributos como _allowCredentials_, _allowHeaders_ o _exposeHeaders_ .
+El tag puede ser tanto a nivel de cláse como a nivel de método. En el siguiente método vamos a poner que solo lo pueda ejecutar
+un determinado servidor.
+
+```
+@CrossOrigin(origins = "http://localhost:9001")
+	@GetMapping("/producto")
+	public ResponseEntity<?> obtenerTodos() {
+		List<Producto> result = productoRepositorio.findAll();
+
+		if (result.isEmpty()) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "No hay productos registrados");
+		} else {
+
+			List<ProductoDTO> dtoList = result.stream().map(productoDTOConverter::convertToDto)
+					.collect(Collectors.toList());
+
+			return ResponseEntity.ok(dtoList);
+		}
+
+	}
+```
+
+#### Configuración CORS global
+Para evitar poner el tag CrossMapping en cada clase o método, Spring permite crear una configuración Global declarando un bean
+WebMvcConfigurer. En dicho bean especificamos los atributos de seguridad para todo el proyecto. 
+```
+@Bean
+	public WebMvcConfigurer corsConfigurer() {
+		return new WebMvcConfigurer() {
+
+			@Override
+			public void addCorsMappings(CorsRegistry registry) {
+				registry.addMapping("/producto/**")
+					.allowedOrigins("http://localhost:9001")
+					.allowedMethods("GET", "POST", "PUT", "DELETE")
+					.maxAge(3600);
+			}
+			
+		};
+	}
+```
+
 
 
