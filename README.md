@@ -2595,5 +2595,97 @@ WebMvcConfigurer. En dicho bean especificamos los atributos de seguridad para to
 	}
 ```
 
+#### Subida de ficheros
+Esta parte contiene tres vídeos, _Servicio de subida de ficheros_ , _Implementación del servicio de subida de ficheros_ y _Uso del 
+servicio de subida de ficheros_ .
+Estos vídeos nos explican de la misma manera, forma y código que en el curso de _SpringWebMVC_ , como usar la clase _Multipart_ para 
+trabjar con varios ficheros y que además puedanser de distinto tipo. El código es exactamente el mismo que el el curso anterior y ademas 
+la estructura de trabajo también (Creación de la interfaz _StorageService_, para luego hacer un servicio que lo implemente etc.).
+Si se quiere bucar el trabajo de subida de ficheros, está hecho el día 14/04/2020.
+
+Ahora seguimos con la suiguiente parte, _Documentando nuestra API REST con Swagger
+
+#### ¿Que es Swagger?
+Swagger es un framework que nos va a permitir dos cosas.
+-Documentar todo nuestro proyecto, todas las peticiones que hacen, que argumentos tienen y de que tipo, ejemplos, modelos con los que 
+trabaja la API que requisitos tienen que cumplir etc.
+-Nos provee de una interfaz grafica facil e intuitiva de usar (Además de bonita), que nos permitirá probar nuestras peticiones de una
+forma mucho más fácil y cómoda.
+En mi trabajo es la forma que tenemos de documentar nuestros servicios, aunque lo combinamos con otra librería llamada _SpringDoc_, que
+añade un par de cambios a nivel documentación.
+
+#### ¿Cómo introducir Swagger en nuestra API?
+Lo primero es importar las dependencias de Swagger en maven.
+```
+<dependency>
+            <groupId>io.springfox</groupId>
+            <artifactId>springfox-swagger2</artifactId>
+            <version>3.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.springfox</groupId>
+            <artifactId>springfox-data-rest</artifactId>
+            <version>3.0.0-SNAPSHOT</version>
+        </dependency>
+        <dependency>
+            <groupId>io.springfox</groupId>
+            <artifactId>springfox-swagger-ui</artifactId>
+            <version>3.0.0-SNAPSHOT</version>
+```
+Se puede comentar a nivel método, especificando que hace, que devuelve, que códigos HTTP puedes recibir a nivel de respuesta, como deben
+ser los argumentos etc. Se usan los tags.
+- _@ApiOperation_ , define que hace una petición de la API.
+- _@ApiResponse_ , define responde una petición de la API.
+- _@ApiParam_, define que parametros rebibe una petición de la API y de que tipo son.
+
+```
+@ApiOperation(value="Obtener un producto por su ID", notes="Provee un mecanismo para obtener todos los datos de un producto por su ID")
+	@ApiResponses(value= {
+			@ApiResponse(code=200, message="OK", response=Producto.class),
+			@ApiResponse(code=404, message="Not Found", response=ApiError.class),
+			@ApiResponse(code=500, message="Internal Server Error", response=ApiError.class)
+	})
+	@GetMapping("/producto/{id}")
+	public Producto obtenerUno(@ApiParam(value="ID del producto", required=true, type = "long") @PathVariable Long id) {
+		try {
+			return productoRepositorio.findById(id)
+					.orElseThrow(() -> new ProductoNotFoundException(id));
+		} catch (ProductoNotFoundException ex) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, ex.getMessage());
+		}
+				
+	}
+```
+
+También podemos documentar un modelo con _@ApiModelProperty_ . Este tag nos permite explicar las propiedades de un modelo, poniendo 
+ejemplos de sis valores, que tipo de valores reciben, algún requerimiento que puedan tener, además, obviamente de su descripción.
+
+```
+@Data 
+@Entity
+public class Producto {
+
+	@ApiModelProperty(value="ID del Producto", dataType="long",  example="1", position=1)
+	@Id @GeneratedValue
+	private Long id;
+	
+	@ApiModelProperty(value="Nombre del producto", dataType="String", example="Jamón ibérico de bellota", position=2)
+	private String nombre;
+	
+	@ApiModelProperty(value="Precio del producto", dataType = "float", example="253.27", position=3)
+	private float precio;
+	
+	@ApiModelProperty(value="Imagen del producto", dataType = "String", example="http://www.midominio.com/files/12345-imagen.jpg", position=4)
+	private String imagen;
+	
+	
+	@ApiModelProperty(value="Categoría del producto", dataType="Categoria", position=5)
+	@ManyToOne
+	@JoinColumn(name="categoria_id")
+	private Categoria categoria;
+	
+}
+```
+
 
 
