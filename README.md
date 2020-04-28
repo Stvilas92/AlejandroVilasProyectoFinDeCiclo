@@ -2687,5 +2687,41 @@ public class Producto {
 }
 ```
 
+## 28/04/2020
+Hoy empezaré el _Curso de elementos avanzados en tu API REST con Spring Boot_
+
+#### Presentación
+Nos presenta el curso y los conocimientos mínimos que debemos aprender. Presenta el curos como una extensión del anterior, que completará
+el conocimiento en lo que se refiere al desarrollo de APIs en Spring.
+
+#### Proyecto de ejemplo
+Como utilizamos la base del curso anterior, utilizaremos el proyecto del curso anterior. Este vídeo es un recordatiorio de como está 
+estructurado el proyecto y que funciones tiene.
+
+#### Paginación de resultados.
+La paginación es la división de un conjunto de datos en subconjutos más peuqeños. Esto hace mas fácil de visualizar los datos además de
+agilizar las peticiones , ya que , tenemos menos cantidad de datos que pidiendo el conjunto de datos entero.
+Para hacer paginación d elos datos de una consulta usaremos la interfaz de Spring _PagingAndSortingRepository_ , que hereda de 
+_JpaRepository_.
+El resultado de una paginación es una página, _Page<T>_ , que es un conjunto de objetos sobre los que se pueden hacer diferentes operaciones , como
+por ejemplo, ordenar. También nos permite ver el numero del resto de páginas, el total de elementos, el tamñao por página etc.
+	
+
+#### Manejo de parámetros query I
 
 
+#### Manejo de parámetros query II
+
+
+
+#### Soporte para XML
+Para soportar XML , no solo como respuesta sino tambien como contenido, basta con incorporar la librería _Jackson Data Media XML_ en el
+archivo _pomp.xml_ .
+```
+<dependency>
+    <groupId>com.fasterxml.jackson.dataformat</groupId>
+    <artifactId>jackson-dataformat-xml</artifactId>
+</dependency>
+```
+Después de esto Jackson se encargará de tratar como XML todos los recuros que entren o salgan de la aplicación señalados como tipo
+``` application/xml ``` .
