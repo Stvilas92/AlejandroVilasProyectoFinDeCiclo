@@ -2704,15 +2704,49 @@ agilizar las peticiones , ya que , tenemos menos cantidad de datos que pidiendo 
 Para hacer paginación d elos datos de una consulta usaremos la interfaz de Spring _PagingAndSortingRepository_ , que hereda de 
 _JpaRepository_.
 El resultado de una paginación es una página, _Page<T>_ , que es un conjunto de objetos sobre los que se pueden hacer diferentes operaciones , como
-por ejemplo, ordenar. También nos permite ver el numero del resto de páginas, el total de elementos, el tamñao por página etc.
-	
+por ejemplo, ordenar. También nos permite ver el numero del resto de páginas, el total de elementos, el tamñao por página etc. 
+Vamos a buscar productos en nuestro servicio por paginación. Nuestro respositorio de productos ya extiende de _JpaRepository_ por lo tanto 
+implementa _PagingAndSortingRepository_.
+Debemos pasar el producto como un objeto _Pageable_ . Con el tag _@PageableDefault_ , donde le podemos poner valores por defecto del
+valores como el tamaño de cada página y el número de página que queremos saber .
+El método _findAll_ del repositorio encontrará todos los productos pero solo recuperará solo los que estén en la página indicada.
+
+```
+@GetMapping("/producto")
+	public ResponseEntity<?> obtenerTodos(@PageableDefault(size = 10, page = 0) Pageable pageable) {
+		Page<Producto> result = productoServicio.findAll(pageable);
+
+		if (result.isEmpty()) {
+			throw new ProductoNotFoundException();
+		} else {
+			Page<ProductoDTO> dtoList = result.map(productoDTOConverter::convertToDto);
+		}
+	}
+```
+
 
 #### Manejo de parámetros query I
-
-
 #### Manejo de parámetros query II
+En esta parte complementaremos la paginación con seleccionar datos con consultas de selección mas complejas. Utilizando el tag
+_@RequestParam_ , equivalente a _@QueryParam_ , seleccionaremos un producto por diferetes argumentos como son el precio o el
+nombre.
+```
+@GetMapping(value = "/producto")
+	public ResponseEntity<?> buscarProductosPorVarios(
+			@RequestParam("nombre") Optional<String> txt,
+			@RequestParam("precio") Optional<Float> precio,
+			Pageable pageable, HttpServletRequest request) {
+		
+		Page<Producto> result = productoServicio.findByArgs(txt, precio, pageable);
+	
+		if (result.isEmpty()) {
+			throw new SearchProductoNoResultException();
+		} else {
 
-
+			Page<ProductoDTO> dtoList = result.map(productoDTOConverter::convertToDto);
+		}
+	}	
+```
 
 #### Soporte para XML
 Para soportar XML , no solo como respuesta sino tambien como contenido, basta con incorporar la librería _Jackson Data Media XML_ en el
