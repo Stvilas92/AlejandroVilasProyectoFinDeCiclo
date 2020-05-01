@@ -2730,6 +2730,14 @@ El método _findAll_ del repositorio encontrará todos los productos pero solo r
 En esta parte complementaremos la paginación con seleccionar datos con consultas de selección mas complejas. Utilizando el tag
 _@RequestParam_ , equivalente a _@QueryParam_ , seleccionaremos un producto por diferetes argumentos como son el precio o el
 nombre.
+_@RequestParam_ puede tener varios atributos: 
+- _name_ o _value_ : nombre del parámetro que vamos a recibir
+- _required_ : Indica si el parámetro es o no obligatorio.
+- _defaultValue_ : proporciona un valor por defecto en el caso de no recibir ninguno.
+Con esto podemos jugar con valores por defecto en las consultas, y, asegurarnos de que siempre son consultas válidas (Que no
+generan errores). En caso de no especificar, el valor _reuquired_ es _false_.
+Para poder mantener las ventajas de required, vamos a crear un objeto de tipo _Optional_ .
+Con esto, podemos hacer una consulta por precio y nombre sin que alguno de estos dos tenga algún valor.
 ```
 @GetMapping(value = "/producto")
 	public ResponseEntity<?> buscarProductosPorVarios(
@@ -2742,7 +2750,6 @@ nombre.
 		if (result.isEmpty()) {
 			throw new SearchProductoNoResultException();
 		} else {
-
 			Page<ProductoDTO> dtoList = result.map(productoDTOConverter::convertToDto);
 		}
 	}	
@@ -2758,4 +2765,211 @@ archivo _pomp.xml_ .
 </dependency>
 ```
 Después de esto Jackson se encargará de tratar como XML todos los recuros que entren o salgan de la aplicación señalados como tipo
-``` application/xml ``` .
+``` application/xml ``` , tanto en _AcceptType_, como en _ContentType_ .
+
+## 01/05/2020
+Hoy voy con la parte de modelos de datos más complejos.
+
+#### Uso del patrón DTO en peticiones y respuestas.
+En JPA tenemos la anotación _@Entity_ para seleccionar un objeto, como una entidad de base de datos , en las que las propiedades del objeto
+serían las columnas de la entidad. No es bueno que se usen las entidades en la lógica de  negocio, par ello usamos _DTO_.
+_DataTranferObject_ es un objeto que puede tener datos de:
+- Una entidad.
+- Varias entidades distintas.
+- Varias entidades relacionadas.
+- Agrupar datos de todas las entidades.
+El _DTO_ será el objeto que se usará para gestionar los datos de una entidad para usarlos en la lógica de negocio de nuestra aplicación.
+Mientras que las clases _Entity_, serán usadas unicamente para recuperar datos de la base de datos.
+```
+@GetMapping("/producto")
+	public ResponseEntity<?> obtenerTodos() {
+		List<Producto> result = productoRepositorio.findAll();
+
+		if (result.isEmpty()) {
+			return ResponseEntity.notFound().build();
+		} else {
+
+			List<ProductoDTO> dtoList = result.stream().map(productoDTOConverter::convertToDto)
+					.collect(Collectors.toList());
+
+			return ResponseEntity.ok(dtoList);
+		}
+	}
+```
+
+Como podemos observar en el método viso anteriormente, en  la variable _result_, se devuelven una lista de entidades Producto, que luego
+mapeamos a DTO, que devolvemos como respuesta al cliente.
+
+#### Ajustando nuestras clases con JSONView
+_JSONView_ es una herramienta de la librería _Jackson2_ que nos permite elegir que campos de un objeto serán transformados a JSON.
+Se puede usar tanto con DTOs como con Entidades.
+Para crearlas, creamos un objeto que tendrá varias inerfaces, las cuales serán las vistas a utilizar.
+```
+public class ProductoViews {
+	
+	public interface Dto { }
+	public interface DtoConPrecio extends Dto { }
+
+}
+```
+Despúes en un objeto DTO o Entity, le indicamos con el tag _@JsonView_ , las propiedades que queremos que se usen en las vistas y en
+que vistas se utilizarán. Las vistas que hereden de otras tendrán los elementos de la clase padre.
+```
+public class ProductoDTO {
+	
+	@JsonView(ProductoViews.Dto.class)
+	private long id;
+	@JsonView(ProductoViews.Dto.class)
+	private String nombre;
+	@JsonView(ProductoViews.Dto.class)
+	private String imagen;
+	@JsonView(ProductoViews.DtoConPrecio.class)
+	private float precio;
+	@JsonView(ProductoViews.Dto.class)
+	private String categoria;
+}
+```
+
+Por último, hay que indicar en el conttrolador a nivél de método, que vista queremos utilizar con el tag _@JsonView_ .
+
+```
+@JsonView(ProductoViews.DtoConPrecio.class)
+	@GetMapping(value = "/producto")
+	public ResponseEntity<?> buscarProductosPorVarios(@RequestParam("nombre") Optional<String> txt,
+			@RequestParam("precio") Optional<Float> precio, Pageable pageable, HttpServletRequest request) {
+
+		Page<Producto> result = productoServicio.findByArgs(txt, precio, pageable);
+
+		if (result.isEmpty()) {
+			throw new SearchProductoNoResultException();
+		} else {
+
+			Page<ProductoDTO> dtoList = result.map(productoDTOConverter::convertToDto);
+			UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(request.getRequestURL().toString());
+
+			return ResponseEntity.ok().header("link", paginationLinksUtils.createLinkHeader(dtoList, uriBuilder))
+					.body(dtoList);
+
+		}
+
+	}
+```
+
+#### Asociaciones Many To One
+Según el tipo de relaciones entre entidades tratar el tipo de modelo puede ser mas o menos comlicado. Empezamos a ver las relaciones
+Many to One (N -> 1 en bases de datos).
+Se suele variar la respuesta de las peticiones en el caso del tipo de relación. En el controlador de Productos, como podemos ver
+a lo largo del proyecto la respuesta de los diferentes CRUD ha sido:
+- GET de todos los productos -> DTO.
+- GET por id -> Objeto completo.
+- POST -> DTO del objeto creado.
+- PUT -> DTO del objeto modificado.
+- DELETE -> Sin cuerpo de resupuesta puesto que , con el 204, nos confirma que el objeto ha sido eliminado.
+Implementamos esto en productos, que tiene una asiciacion many to one con categoría.
+
+#### Asociaciones One to Many
+Nos se recomienda hacer este tipo de asociaciones de forma unidireccioal, puesto que suelen ser complementarios de una relación many to one
+en sentido contrario. En el ejemplo anterior tenemos Producto y Categoría. Si gestionamos la relación desde una categoría (One to many ), 
+tendríamos que crear tres tablas, una de Categorías, otra de Procuctos y un join entre ambas. Por lo tanto se recomienda que la 
+relación sea bidireccional.
+Para la entidad categoría tendríamos que poner el el join el tipo de relación y la columna a partir de la cual se van a relacionar, y ,
+además , usar el tag de _Jackson2_ _@JsonBackReference_ , desde el otro lado (Entidad producto), debemos indicar que estamos manejando
+un nuevo json con _@JsonManagedReference_
+Esto hace que se eviten referencias circulares a la hora de crear el Json.
+```
+public class Categoria {
+
+	@Id @GeneratedValue
+	private Long id;
+	private String nombre;
+	
+	@JsonBackReference
+	@Join(name = "productoID")
+	private Set<Producto> producto;
+	
+}
+```
+Producto.
+```
+public class Producto {
+
+	@Id @GeneratedValue
+	private Long id;
+	
+	private String nombre;
+	
+	private float precio;
+	
+	private String imagen;
+	
+	
+	@ManyToOne
+	@JsonManagedReference
+	@JoinColumn(name="categoria_id")
+	private Categoria categoria;
+}
+ ```
+A nivel controlador se recomienda
+- GET de todos los productos -> Dos DTO, uno pr cada entidad
+- GET por id -> Dos DTO, uno pr cada entidad
+- POST -> DTO del objeto a crear , que incluya también los datos de la otra entidad relacionada.
+- PUT -> Usaremos el de la petición POST, aunque depende del programa , se puede variar, dependiendo de que atributos querramos modificar.
+- DELETE -> Sin cuerpo de resupuesta puesto que , con el 204, nos confirma que el objeto ha sido eliminado.
+
+#### Relaciones many to many
+Como en las relaciones one to many , se recomienda tratarlas de forma bidireccional, para evitar recursión infinita.
+La forma de implementación será identica.
+Añadiremos a parte el tag _@JsonIdentity_, el cual añade un id a un JSON,ya sea un id artificial o un id sacado de una entidad.
+Crearemos un objeto _Lote_ , el cual tendrá una relación many to many con productos.
+
+```
+@JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id", scope = Lote.class)
+public class Lote {
+	
+	@Id @GeneratedValue
+	private Long id;
+	
+	private String nombre;
+	
+	@JsonManagedReference
+	@ManyToMany(fetch = FetchType.EAGER)
+	@ManyToMany
+	@JoinTable(
+			joinColumns = @JoinColumn(name="lote_id"),
+			inverseJoinColumns = @JoinColumn(name="producto_id")
+	)
+	@Builder.Default
+	private Set<Producto> productos = new HashSet<>();
+```
+Producto.
+```
+@JsonIdentityInfo(generator = ObjectIdGenerators.PropertyGenerator.class, property = "id", scope = Producto.class )
+public class Producto {
+
+	@Id @GeneratedValue
+	private Long id;
+	
+	private String nombre;
+	
+	private float precio;
+	
+	private String imagen;
+	
+	
+	@ManyToOne
+	@JoinColumn(name="categoria_id")
+	private Categoria categoria;
+	
+	@JsonBackReference
+	@EqualsAndHashCode.Exclude
+	@ToString.Exclude
+	@ManyToMany(mappedBy="productos")
+	@Builder.Default
+	private Set<Lote> lotes = new HashSet<>();
+
+}
+```
+
+
+
+
