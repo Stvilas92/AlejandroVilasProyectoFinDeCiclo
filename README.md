@@ -2970,6 +2970,166 @@ public class Producto {
 }
 ```
 
+## 02/05/2020
 
+#### ¿Que es HATEOAS y HALL?
+HATEOAS son las siglas de Hypermedia as the engine of application state. Esto no es un concepto que sea nuevo en REST puesto que el
+protocolo HTTP se basa en Hypermedia. Esto significa que  el cliente pueda moverse por la aplicación web siguiendo las URI en formato 
+hipermedia, en vez de tenr que buscar dato a dato cada en cada JSON .
+Aqui tenemos una respuesta en modo JSON normal.
+```
+{
+  "id" : 323423,
+  "nombre" : "Game of Thrones",
+  "categoria" : "Culebrones"
+}
+```
+Y aquí en modo HATEOAS
+```
+{
+  "self" : "/libros/culebrones/323423",
+  "nombre" : "Game of Thrones",
+  "categoria" : "/libros/culebrones",
+  "autor" : {
+       "nombre" : "George R. R. Martin",
+       "self" : "/autores/george-r-r-martin"
+  }
+}
+```
+#### Spring Data Rest
+_Spring Data Rest_ se basa en los repositorios de _Spring Data_ y expone los recursos HTTP como hipermedia (HATEOAS). Además implementa 
+todas las funcionalidades de _Spring Data_ . Su versión actual (3.2.0) soporta Mogo DB ,  Neo4j,  Solr, Cassandra y Gemfire.
+
+#### Primer ejemplo con Spring Data Rest
+Haremos un proyecto nuevo, que nos informará sobre ciudades y paises.
+Hay que incorporar las dependencias necesarias para que se trabaje con _Spring Data Rest_. QUe serían
+- Spring Web
+- Spring Data JPA
+- H2
+- Lombok
+- REST repositories
+- REST HAL repositories
+Con el tag _@RepositoryRestResource(path = "ciudades", collectionResourceRel = "ciudades")_ especificamos como sería la pluralidad debido,
+a que _Spring Data Rest_ hace las pluralidades en inglés y no en español.
+
+Modelo Ciudad 
+```
+@Entity
+public class Ciudad {
+
+	@Id @GeneratedValue
+	private Long id;
+	
+	private String nombre;
+	
+	@ManyToOne
+	@JoinColumn(name = "pais_id")
+	private Pais pais;
+	
+}
+```
+
+Modelo Pais
+```
+@Entity
+public class Pais {
+
+	@Id @GeneratedValue
+	private Long id;
+	
+	private String nombre;
+	
+}
+```
+
+Repositorio Pais
+```
+public interface PaisRepositorio extends JpaRepository<Pais, Long>{}
+```
+
+Repositorio Ciudad
+```
+@RepositoryRestResource(path = "ciudades", collectionResourceRel = "ciudades")
+public interface CiudadRepositorio extends JpaRepository<Ciudad, Long>{
+```
+La dependencia, _REST HAL repositories_ , tranforma automaticamente las repuestas de los modelos en hipermedia.
+
+#### Configuración de algunos parámetros
+Se pueden configurar aspectos como la Uri base, formato de salida  o detección de repositorios. 
+La uri base se puede cambiar en el archivo .properties mediante la siguiente propiedad ``` spring.data.rest.base-path=/api  ```, y
+Spring Data Rest automáticamente traslada el path de la api a la especificada en la property.
+En cuanto a la detecciónd de repositorios, por defecto con todos, peritiene en cuenta el tag @RestResource o @RepositoryRestResource, con
+la propiedad _exported_ a false. Si esta porpiedad está a false, no detectará el repositorio.
+También tendremos:
+- ALL , exporta todos los repositosrios.
+- ANOTATION , solo detecta los repositorios con _exported_ a true.
+- VISIBILITY , solo los repositorios público anotados.
+
+Para configurarlo hay que implementar el método _configureRepositoryRestConfiguration_, de la interfaz _RepositorioRestConfigurer_ .
+```
+@Component
+public class RestConfiguration implements RepositoryRestConfigurer {
+
+	@Override
+	public void configureRepositoryRestConfiguration(RepositoryRestConfiguration config) {
+		config.setRepositoryDetectionStrategy(RepositoryDetectionStrategies.ALL);
+	}
+}
+```
+Se pueden cambiar otros parámetros mediante properties predefinidas.
+```
+spring.data.rest.default-page-size=2
+spring.data.rest.max-page-size=100
+spring.data.rest.return-body-on-create=false
+```
+Como podemos observar hemos cambiado el maximo de elementos en una página, solo queremos ver ds páginas, y ,cuando se crean elementos,
+no se devuelve ningún cuerpo.
+
+#### Paginación y búsqueda
+Para paginar, como lo hicimos anteriormente, hay que implementar _JpaRepository_. Una gran característica de _Spring Data Rest_ , es que
+integra en las uri por defecto las propiedades _sort_ , _page_ y _size_ , con lo que no tendremos que declarar los parámetros de paginación
+como hicimos anteriormente. 
+Por defecto, _Spring Data Rest_ oredena de manera descendente, pagina todos los resultados y además el tamaño de página por defecto es 20.
+Lo único que hay que hacer entonces para paginar es implementar _JpaRepository_ y declara un objeto pageable como _Pageable_ en el
+método que queramos que pagine sus resultados.
+
+```
+@RepositoryRestResource(path = "ciudades", collectionResourceRel = "ciudades")
+public interface CiudadRepositorio extends JpaRepository<Ciudad, Long>{
+	@RestResource(path = "nombreComienzaPor", rel = "nombreComienzaPor")
+	public Page<Ciudad> findByNombreStartsWith(@Param("nombre") String nombre, Pageable p);
+
+}
+```
+
+#### Proyecciones
+Las proyecciones son algo parecido a los dto. Son propiedades de los objetos que queremos que se devuelvan en una respuesta , en vez
+de que se decuelvan enteras. Ejemplo, una ciudad sin pais, solo con el nombre.
+Se definen a través de una interfaz, que implementa el tag _@Proyection_, especificando que clase contiene la entidad
+, y declaramos los métodos getter de las propiedades que queramos saber de una entidad.
+```
+@Projection(name = "ciudadSinUbicacion", types = { Ciudad.class })
+public interface CiudadProj {
+
+	String getNombre();
+	
+}
+```
+Para consumir la proyección debemos especificar en la uri de una ciudad concreta , la query _proyection=ciudadSinUbicacion_ .
+
+#### Excrepts : Composición de modelos
+Los excrepts son sustitutos de los modelos , hechos a través de sus proyecciones. Se implenta en el repositorio del modelo que queramos
+modificar , con el tag @RepositoryRestResource y la propiedad _excerptProjection_ con la clase que contenga la proyección que queremos
+usar en vez del modelo.
+
+```
+@RepositoryRestResource(path = "ciudades", collectionResourceRel = "ciudades", excerptProjection = CiudadProj.class)
+public interface CiudadRepositorio extends JpaRepository<Ciudad, Long>{
+	
+	@RestResource(path = "nombreComienzaPor", rel = "nombreComienzaPor")
+	public Page<Ciudad> findByNombreStartsWith(@Param("nombre") String nombre, Pageable p);
+
+}
+```
 
 
