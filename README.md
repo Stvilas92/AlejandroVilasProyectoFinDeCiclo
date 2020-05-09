@@ -3133,3 +3133,104 @@ public interface CiudadRepositorio extends JpaRepository<Ciudad, Long>{
 ```
 
 
+## 03/05/2020
+
+#### Añadir una base de datos PostDegree Sql
+
+
+#### Creación de un nuevo perfil de configuración
+
+
+#### Monitorización con actuator
+
+
+#### Dockerización de nuestra aplicación
+
+
+## 09/05/2020
+Hoy empiezo el último curso de la carrera de _Desarrollador de Spring_; _Curso de seguridad en tu API REST_
+
+#### Presentación
+Nos presenta el curso y los requisitos mínimos de conocimiento para realizar el mismo. Basicamente el curso trata sobre la implementación 
+de seguridad en las APIs REST de distintas maneras.
+
+#### Introducción a Spring Security
+_Spring Security_ es un proyecto paragüas que incorpora varios proyectos de seguridad, que responde a dos preguntas básicas, ¿Quién eres?
+(Autenticación), y ¿Qué puedes hacer?(Autorización).
+La implementación de _Spring Security_ es inmediata y rápida. Solo hay que implemetar su dependencia maven en el pom.xml de la aplicación.
+```
+<dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-security</artifactId>
+</dependency>
+```
+Al implmentar la dependencia, _Spring Security_ se integran en el contenedor de sevlets utlizando _Java Filters_ . Un filtro es una 
+funcionalidad que se cloca entre el cliente y el servidor, que deja pasar o no algunas peticiones.
+La implementación hace varias cosas por defecto:
+- Implementa login y logout.
+- Soporta protección contra ataques CSRF.
+- Crea por defecto un usuario y contraseña.
+- Habilita la configuración por defecto a través de un filtro llamado _springSecurityFilterChain_ , y se registra para todas las peticiones.
+- Protege el almacenamiento de la contraseña con _BCrypt_.
+
+#### Autenticación vs atorización
+Como dijimos antes estos dos conceptos responde a dos preguntas.
+- Autenticación, ¿Quién eres?. Se implenta a través de una interfaz _AutenticationManager_ , y su método _autenticate_, que devuelve tres 
+cosas; null, _autenticationException_, o en caso de éxito, un objeto _Autentication_ con la propiedad _auteticated = true_ . El método
+recibe un objeto _Autentication_, con el cual procederemos a autenticarnos.
+Esta interfaz se implementa en _ProviderManager_, que a mayores de _AutenticationManager_, nos añade un método que nos indica si la 
+instancia soporta determinados tipos de auntenticación.
+
+- Autorización, ¿Qué puedes hacer?. Se hace hace a trevés de _AccesDecisionManager_. Hay tres implementaciones de esta interfaz pero todas
+delegan en un objeto _ActionDecisionVoter_ , que es un objeto compuesto de una autenticación y un objeto seguro que es decorado a través de 
+una colección de _ConfigAttributes_ . Los _ConfigAttributes_ son un conjunto de metadatos que determinan el nivel de acceso del usuario.
+Se puede cnfigurar la autenticación de dos maneras:
+- A nivel de método con los tags _@PreAuthorize_ , _@PostAuthorize_
+- Extendiendo de la clase _WebSecurityConfigurerAdapter_
+
+#### Clases e interfaces de Spring Security
+Nos centraremos en las clases más comunes de Srpring Security además de las que hemos visto en el anterior vídeo.
+- _WebSecurityConfigurerAdapter_ , clase base para una configuración básica web de aunteticación y autorización. Se usa el tag
+_@EnableWebSecurity_ , para "encender" o "apagar" , el uso de la seguridad.
+- _Autentication_ , extiende a _Principal_ . Un _Principal_ es  es una entidad (persona, grupo etc) que puede ser autenticado en un sistema
+informático o red. Representa un token para realizar la autenticación, o para un principal una vez autenticado.
+- _AutenticationManagerBuilder_ , builder para contrir objetos tipo _AutenticationManager_ . Puede guardar la configuración de usuarios 
+en memoria o usando JDBC, o LDAP, o _UserDatails_.
+- _UserDatails_ representa la información de un usuario, que irá dentro de un objeto _Autentication_.
+- _User_ objeto modelo que incluye información de usuario obtenida de un _UserDatails_, del que pede extender directamente.
+- _GrantedAutority_, interfaz que representa un privilegio individual.
+- _SimpleGrantedAutority_, clase que implementa  _GrantedAutority_, almacena un string de una autority de un objeto _Autentication_.
+- _UserDatailsService_ , solamenta implementa un método que carga la información de un usuario. Se utiliza como DAO(Data Acces Object).
+
+
+#### Posibilidad de implementarla seguridad de una api REST
+En el caso de las API REST, no hay interfaz de usuario, por lo tanto no podemos acceder mediante un login. Vamos a ver tres formas, 
+aunque hay bastantes más.
+- Básica (Basic).
+Más elemental a través del protocolo HTTP. Simple pero poco fiable. N es muy elegante pero cumple su función. Cunado se hace una 
+solicitud se pide la contraseña, que si es correcta nos da acceso.
+
+- Json Web Tokens. No es un estandar de autenticación , sino un estarndar de creación de tokens de acceso que permiten propagar la 
+identidad y privilegios. La información puede ser verificada porque está firmada digitalmente.
+El proceso de autenticación es el siguiente; el usuario se loguea, se crea el token JWT y se le envía al cliente, el cliente pide la
+autorización con el token como encabezado, se comprueba el token ,y , si es correcto, se devuelve el recurso.
+
+- OAuth 2.0. Permite compartir información entre sitios sin compartir identidad, implementando diferentes fujos de autenticación 
+(_autentication code flow_, _resource owner password  credential flow_ etc).  Se definen varios roles, dueño del recurso, cliente, servidor
+de recursos protegidos, servidor de autorización.
+El proceso es el siguiente, peticion de autorizacion del cliente , el servidor se la concede, el cliete pide el token de seguridad de un
+recurso protegido, el servidor se lo da, y, con ese recurso se consigue el recurso protegido.
+
+#### Modelo de usuario y rol
+
+
+#### Repositorio y servicio
+
+
+#### Servicio UserDetails
+
+
+#### Controlador de registro
+
+
+#### Refractorización para usar DTO
