@@ -3222,15 +3222,651 @@ El proceso es el siguiente, peticion de autorizacion del cliente , el servidor s
 recurso protegido, el servidor se lo da, y, con ese recurso se consigue el recurso protegido.
 
 #### Modelo de usuario y rol
+Haremos una api con el modelo Usuario; representación de la persona que utilice la api, con datos básicos, nombre , contraseña, avatar y 
+roles (Será el otro modelo). Implementará la interfaz _UserDetails_.  Tendermos diferentes clase para usar nuestro modelo usuario  UserEntity, User, CreateUserDto y GetUserDto.
+Vamos a proceder a crear el modelo Usuario
+```
+@Entity
+@EntityListeners(AuditingEntityListener.class)
+@Data
+@Builder
+public class UserEntity implements UserDetails {
+
+	private static final long serialVersionUID = 6189678452627071360L;
+
+	@Id
+	@GeneratedValue
+	private Long id;
+
+	@Column(unique = true)
+	private String username;
+
+	private String password;
+
+	private String avatar;
+
+	@ElementCollection(fetch = FetchType.EAGER)
+	@Enumerated(EnumType.STRING)
+	private Set<UserRole> roles;
+
+	@CreatedDate
+	private LocalDateTime createdAt;
+
+	@Builder.Default
+	private LocalDateTime lastPasswordChangeAt = LocalDateTime.now();
+
+	@Override
+	public Collection<? extends GrantedAuthority> getAuthorities() {
+		return roles.stream().map(ur -> new SimpleGrantedAuthority("ROLE_" + ur.name())).collect(Collectors.toList());
+	}
+
+	@Override
+	public boolean isAccountNonExpired() {
+		return true;
+	}
+
+	@Override
+	public boolean isAccountNonLocked() {
+		return true;
+	}
+
+	@Override
+	public boolean isCredentialsNonExpired() {
+		return true;
+	}
+	
+	@Override
+	public boolean isEnabled() {
+		return true;
+	}
+}
+```
+De momento vamos a implementar los métodos de _UserDeatils_, pero sin gestionarlos. En las comprobaciones de cuenta o credenciales
+devolveremos true para evitar problemas.
+Y la los roles lo gestionaremos mediante un ENUM.
+```
+public enum UserRole {
+	USER, ADMIN
+
+}
+```
 
 
 #### Repositorio y servicio
+Vamos a crear un repositorio para _UserEntity_. En el que buscaremos un usuario por nombre.
+```
+public interface UserEntityRepository extends JpaRepository<UserEntity, Long> {
+	
+	Optional<UserEntity> findByUsername(String username);
 
+}
+```
+Crearemos un servicio base, para envolver el repositorio con el resto de operaciones CRUD. Se puede hacer los métodos CRUD directamente
+pero en profesor de el curso lo ha hecho de  esta manera.
+
+```
+public abstract class BaseService<T, ID, R extends JpaRepository<T, ID>> {
+
+	@Autowired
+	protected R repositorio;
+	
+	public T save(T t) {
+		return repositorio.save(t);
+	}
+	
+	public Optional<T> findById(ID id) {
+		return repositorio.findById(id);
+	}
+	
+	public List<T> findAll() {
+		return repositorio.findAll();
+	}
+	
+	public T edit(T t) {
+		return repositorio.save(t);
+	}
+	
+	public void delete(T t) {
+		repositorio.delete(t);
+	}
+	
+	public void deleteById(ID id) {
+		repositorio.deleteById(id);
+	}	
+}
+```
+Este servicio está hecho para cualquier entidad. Ahora tendremos que crear un servicio destinando a la gestión de usuarios que extienda
+de _BaseService_
+```
+@Service
+public class UserEntityService extends BaseService<UserEntity, Long, UserEntityRepository>{
+
+	public Optional<UserEntity> findUserByUsername(String username) {
+		return this.repositorio.findByUsername(username);
+	}
+}
+```
 
 #### Servicio UserDetails
+Este servicio será tratado como un DAO para la gestión de usuarios, es decir, no va aautenticar ni autorizar, simplemente, va a recoger 
+información de usuario. Esta información más adelante, sí que la usaremos para autenticar al usuario.
 
+```
+@Service("userDetailsService")
+@RequiredArgsConstructor
+public class CustomUserDetailsService implements UserDetailsService{
+
+	private final UserEntityService userEntityService;
+	
+	@Override
+	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+		return userEntityService.findUserByUsername(username)
+					.orElseThrow(()-> new UsernameNotFoundException(username + " no encontrado"));
+	}
+}
+```
+Vamos a implementar la configuración, pero que de momento no tenga seguridad, que ya añadiremos más adelante. El método _configure_ , 
+ignorará la seguridad para las peticiones que le digamo, en este caso, todas.
+
+```
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+	@Override
+	public void configure(WebSecurity web) {
+		web.ignoring().anyRequest();
+	}	
+}
+```
 
 #### Controlador de registro
+Vamos a hacer un controlador para usuarios. Su rol será basico y la contraseña será guardada en la base de datos encriptada.
+Vamos a configurar un bean para encriptar la contraseña en la clase _SecurityConfig_
+```
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
 
+	@Override
+	public void configure(WebSecurity web) {
+		web.ignoring().anyRequest();
+	}
+
+	@Bean
+	public PasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder();
+	}	
+}
+```
+Nos situamos en _serEntityService_y añadimos el bean, para usarlo en la creación de usuarios.
+```
+@Service
+@RequiredArgsConstructor
+public class UserEntityService extends BaseService<UserEntity, Long, UserEntityRepository>{
+	
+	@Autowired
+	private final PasswordEncoder passwordEncoder;
+
+	public Optional<UserEntity> findUserByUsername(String username) {
+		return this.repositorio.findByUsername(username);
+	}
+	
+	public UserEntity nuevoUsuario(UserEntity userEntity) {
+		userEntity.setPassword(passwordEncoder.encode(userEntity.getPassword()));
+		userEntity.setRoles(Stream.of(UserRole.USER).collect(Collectors.toSet()));
+		return save(userEntity);
+	}
+}
+```
+Ahora que guarda la contraseña cifrada cada vez que cree un usuario, procedemos a hacer el cntrolador.
+```
+@RestController
+@RequestMapping("/user")
+public class UserController {
+	@Autowired
+	private final UserEntityService userEntityService;
+
+	@PostMapping("/")
+	public UserEntity nuevoUsuario(@RequestBody UserEntity newUser) {
+		try {
+			return userEntityService.nuevoUsuario(newUser);
+		} catch (DataIntegrityViolationException ex) {
+			throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage());
+		}
+	}
+}
+```
 
 #### Refractorización para usar DTO
+Crearemos un DTO para getionar la creaciónde usuarrios, ya que nuestro modelo no es un buen candidato tanto para entrada como salida
+de datos. Podríamos pedir contraseña por duplicado, asignar el rol internamente y , en la salida, devolver solo el nombre de usuario,
+roles y avatar
+Vamos a crear dos DTOs, uno para entrada y otro para salida, como especificamos en la presentación del modelo usuario.
+CreateUser
+```
+@Getter @Setter
+@NoArgsConstructor @AllArgsConstructor @Builder
+public class CreateUserDto {
+	
+	private String username;
+	private String avatar;
+	private String password;
+	private String password2;
+}
+```
+
+GetUserDTO
+``` 
+@Getter @Setter
+@uilder
+public class GetUserDto {
+	
+	private String username;
+	private String avatar;
+	private Set<String> roles;
+}
+```
+
+Para convertir un _UserEntity_ en un _GetUSerDto_ , vamos a crear una tercera clase para mapear los DTOs.
+```
+@Component
+public class UserDtoConverter {
+	
+	public GetUserDto convertUserEntityToGetUserDto(UserEntity user) {
+		return GetUserDto.builder()
+				.username(user.getUsername())
+				.avatar(user.getAvatar())
+				.roles(user.getRoles().stream()
+							.map(UserRole::name)
+							.collect(Collectors.toSet())
+				).build();
+	}
+}
+```
+
+Vamos acrear diferentes excepciones con las que controlaremos los errores que se puedan producir en la autenticación.
+```
+public class NewUserWithDifferentPasswordsException extends RuntimeException {
+
+	private static final long serialVersionUID = -7978601526802035152L;
+
+	public NewUserWithDifferentPasswordsException() {
+		super("Las contraseñas no coinciden");
+	}
+}
+```
+
+Las excepciones la gestionaremos en un _ControllerAdvice_.
+```
+@RestControllerAdvice
+public class GlobalControllerAdvice extends ResponseEntityExceptionHandler {
+	
+	@ExceptionHandler(NewUserWithDifferentPasswordsException.class)
+	public ResponseEntity<ApiError> handleNewUserErrors(Exception ex) {
+		return buildErrorResponseEntity(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+	
+	@Override
+	protected ResponseEntity<Object> handleExceptionInternal(Exception ex, Object body, HttpHeaders headers,
+			HttpStatus status, WebRequest request) {
+		ApiError  apiError = new ApiError(status, ex.getMessage());
+		return ResponseEntity.status(status).headers(headers).body(apiError);
+	}
+	
+	private ResponseEntity<ApiError> buildErrorResponseEntity(HttpStatus status, String message) {
+		return ResponseEntity.status(status)
+					.body(ApiError.builder()
+							.estado(status)
+							.mensaje(message)
+							.build());
+					
+	}
+}
+```
+
+Ahora vamos a modificar el método _nuevoUsuario_ de el servicio _UserService_ para que al crear un usuario, compruebe las contraseñas 
+y le asigne internamente un rol.
+```
+public UserEntity nuevoUsuario(CreateUserDto newUser) {
+
+		if (newUser.getPassword().contentEquals(newUser.getPassword2())) {
+			UserEntity userEntity = UserEntity.builder().username(newUser.getUsername())
+					.password(passwordEncoder.encode(newUser.getPassword())).avatar(newUser.getAvatar())
+					.roles(Stream.of(UserRole.USER).collect(Collectors.toSet())).build();
+			try {
+				return save(userEntity);
+			} catch (DataIntegrityViolationException ex) {
+				throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El nombre de usuario ya existe");
+			}
+		} else {
+			throw new NewUserWithDifferentPasswordsException();
+		}
+	}
+```
+Por último solo hay que modificar el post del controller para modificar la creación de usuario. Ahora recibiríamos un _CreateUserDTO_ y
+reponderíamos con un _GetUserDTO_.
+```
+@PostMapping("/")
+	public GetUserDto nuevoUsuario(@RequestBody CreateUserDto newUser) {
+			return userDtoConverter.convertUserEntityToGetUserDto(userEntityService.nuevoUsuario(newUser));
+	}
+```
+
+#### ¿En qué consiste la seguridad básica?
+Es una seguridad no pensada para canales públicos, no usa cookies y cifra los datos en base64 . Si trabajamos en REST, cualquiera los 
+podría descifrar. El proceso de autenticación se hace con cotraseña, y si es correcta se recibe el recurso protegido. Si la contraseña
+es incorrecta nos devuelve un codigo 401, no autorizado.
+
+
+#### Implementación de la seguridad básica?
+Vamos a modificar nuestro mecanismo de autenticación. Nos basaremos en el proyecto anterior, y lo añadiremos al proyecto de compra de 
+productos visto en los anteriores cursos.
+Vamos a sacar el password encoder de la clase de configuración para evitar dependencias circulares. Crearemos una clase nueva llamada
+_PasswordEncoder_.
+```
+@Configuration
+public class PasswordEncoderConfig {
+	
+	@Bean
+	public PasswordEncoder passwordEncoder() {
+		return new BCryptPasswordEncoder();
+	}
+}
+```
+Vamos a crear nuestro propio _BasicAutenticationEntryPoint_, que es un objeto de _Spring Security_ que se devuelve cuando hay errores en
+autenticación. Es un response para errores or así decirlo, que si extendemos de él , podremos modificar su contenido.
+```
+@Component
+@RequiredArgsConstructor
+public class CustomBasicAuthenticationEntryPoint extends BasicAuthenticationEntryPoint {
+
+	private final ObjectMapper mapper;
+	
+	@Override
+	public void commence(HttpServletRequest request, HttpServletResponse response,
+			AuthenticationException authException) throws IOException, ServletException {
+		response.addHeader("WWW-Authenticate", "Basic realm='" + getRealmName() + "'");
+		response.setContentType("application/json");
+		response.setStatus(HttpStatus.UNAUTHORIZED.value());		
+		
+		ApiError apiError = new ApiError(HttpStatus.UNAUTHORIZED, authException.getMessage());
+		String strApiError = mapper.writeValueAsString(apiError);
+		
+		PrintWriter writer = response.getWriter();
+		writer.println(strApiError);
+		
+		
+	}
+
+	@PostConstruct
+	public void initRealname() {
+		setRealmName("openwebinars.net");
+	}
+}
+```
+
+Por último, modificamos nuestra calse de seguridad.
+```
+
+@Configuration
+@EnableWebSecurity
+@RequiredArgsConstructor
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+	private final CustomBasicAuthenticationEntryPoint customBasicAuthenticationEntryPoint;
+	private final UserDetailsService userDetailsService;
+	private final PasswordEncoder passwordEncoder;
+	
+	@Override
+	protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		auth.userDetailsService(userDetailsService).passwordEncoder(passwordEncoder);
+	}
+
+	@Override
+	protected void configure(HttpSecurity http) throws Exception {
+		http
+			.httpBasic()
+			.authenticationEntryPoint(customBasicAuthenticationEntryPoint)
+			.and()
+			.authorizeRequests()
+				.antMatchers(HttpMethod.GET, "/producto/**", "/lote/**").hasRole("USER")
+				.antMatchers(HttpMethod.POST, "/producto/**", "/lote/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.PUT, "/producto/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.DELETE, "/producto/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.POST, "/pedido/**").hasAnyRole("USER","ADMIN")
+				.anyRequest().authenticated()
+			.and()
+				.csrf().disable();				
+	}
+}
+```
+En el metodo configure que usa un _AuthenticationManagerBuilder_ hacemos la autenticación con contraseña. En es metodo configure con
+_HttpSecurity_, autorizamos por roles a los usuarios a poder realizar diferentes métodos.
+- Rol USER , puede hacer el método getProducto y post para hacer pedidos.
+- Rol ADMIN puede hacer todos los métodos salvo getProducto.
+Para terminar , hemos desabilitado la seguridad CSRF.
+
+#### Refractorización del controlador
+#### Despliegue y pruebas
+Vamos a hacer un endpoint para gestionar los usuarios y vamos a gestionar los métodos del controlador para que se le apliquen los roles de usuario.
+Lo primero es crear un controlador para los usuarios, va crear ususarios y además vamos a devolver la información del usuario autenticado.
+```
+@RestController
+@RequestMapping("/user")
+public class UserController { 
+	
+	private final UserEntityService userEntityService;
+	private final UserDtoConverter userDtoConverter;
+	
+	@PostMapping("/")
+	public GetUserDto nuevoUsuario(@RequestBody CreateUserDto newUser) {
+			return userDtoConverter.convertUserEntityToGetUserDto(userEntityService.nuevoUsuario(newUser));
+
+	}
+	
+	@GetMapping("/me")
+	public GetUserDto yo(@AuthenticationPrincipal UserEntity user) {
+		return userDtoConverter.convertUserEntityToGetUserDto(user);
+	}
+}
+```
+
+Ahora vamos a modificar el controlador de pedidos para que tenga en cuenta los roles de usuario. Solo modificaremos el controlador de 
+pedido, el resto no.
+```
+@GetMapping("/")
+	public ResponseEntity<?> pedidos(Pageable pageable, HttpServletRequest request,
+			@AuthenticationPrincipal UserEntity user) throws PedidoNotFoundException {
+		Page<Pedido> result = null;
+		if (user.getRoles().contains(UserRole.ADMIN)) {
+			result = pedidoServicio.findAll(pageable);
+		} else {
+			result = pedidoServicio.findAllByUser(user, pageable);
+		}
+
+		if (result.isEmpty()) {
+			throw new PedidoNotFoundException();
+		} else {
+			UriComponentsBuilder uriBuilder = UriComponentsBuilder.fromHttpUrl(request.getRequestURL().toString());
+			Page<GetPedidoDto> dtoPage = result.map(pedidoDtoConverter::convertPedidoToGetPedidoDto);
+
+			return ResponseEntity.ok().header("link", paginationLinksUtils.createLinkHeader(result, uriBuilder))
+					.body(dtoPage);
+		}
+	}
+```
+Como podemos ver, si es _ADMIN_, podrá consultar todos los pedidos. Si no lo es, solo podrá consultar los pedidos propios.
+
+#### ¿En que consiste JWT?
+Como dijimos antes , no es un estandar de autenticación , sino un estarndar de creación de tokens de acceso que permiten propagar la 
+identidad y privilegios. La información puede ser verificada porque está firmada digitalmente.
+Un token tiene tres partes codificadas en base 64. las partes están separadas por un punto.
+Un ejemplo es:
+```
+eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJpc3MiOiJPbmxpbmUgSldUIEJ1aWxkZXIiLCJpYXQiOjE1ODkwNDcyOTAsImV4cCI6MTYyMDU4MzI5MCwiYXVkIjoid3d3LmV4YW1wbGUuY29tIiwic3ViIjoianJvY2tldEBleGFtcGxlLmNvbSIsIkdpdmVuTmFtZSI6IkpvaG5ueSIsIlN1cm5hbWUiOiJSb2NrZXQiLCJFbWFpbCI6Impyb2NrZXRAZXhhbXBsZS5jb20iLCJSb2xlIjpbIk1hbmFnZXIiLCJQcm9qZWN0IEFkbWluaXN0cmF0b3IiXX0.A2dBTdSxP3V_ZZvt9yneEfbUAfkwjH6Por5tEmtnNEA
+```
+
+La última parte de la cadena se conoce como _secreto_ o firma, la cual se utiliza para la seguridad de autenticación. Es la parte que se
+compara para certificar que un usuario está  entrando en un lugar en el que está identificado, ya que usuario y servidor comparten el 
+token.
+Se invita a usar HTTPS para que la información sea encriptada.
+El proceso de autenticación es el siguiente; el usuario se loguea, se crea el token JWT y se le envía al cliente, el cliente pide la
+autorización con el token como encabezado, se comprueba el token ,y , si es correcto, se devuelve el recurso.
+
+#### Librerías necesarias
+_Spring Security_ , implementa _JWT_ de forma nativa, pero ligado a _OAuth2_. Si queremos usar _JWT_ de forma independiente en nuestro proyecto debemos declarar las sigueinetes librerñias en nuestro pomp.xml.
+```
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-impl</artifactId>
+    <version>0.10.7</version>
+    <scope>runtime</scope>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-api</artifactId>
+    <version>0.10.7</version>
+</dependency>
+
+<dependency>
+    <groupId>io.jsonwebtoken</groupId>
+    <artifactId>jjwt-jackson</artifactId>
+    <version>0.10.7</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+#### Implementación de seguridad con JWT.
+Al trabajar con JWT de manera independiente , necesitamos crear nuestro controlador de autenticación, que recogerá usuario y contraseña
+y , si es válido, constrirá un token. También haremos un filtro de autorización, que recogerá un token, y, si es válido permitirá 
+realizar la petición. Haremos también la seguridad a nivel de método y modificaremos el entry point personalizado.
+Vamos a modificar nuestra clase _SecurityConfig_
+```
+@Configuration
+@EnableWebSecurity
+@EnableGlobalMethodSecurity(prePostEnabled = true)
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+	private final UserDetailsService userDetailsService;
+	private final PasswordEncoder passwordEncoder;
+	
+	@Bean
+	@Override
+	public AuthenticationManager authenticationManagerBean() throws Exception {
+		return super.authenticationManagerBean();
+	}
+
+	@Override
+	protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		auth.userDetailsService(userDetailsService).passwordEncoder(passwordEncoder);
+	}
+
+	@Override
+	protected void configure(HttpSecurity http) throws Exception {
+		
+		http
+			.csrf()
+				.disable()
+			.exceptionHandling()
+				.authenticationEntryPoint(null) // Lo modificamos más adelante
+			.and()
+			.sessionManagement()
+				.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+			.and()
+			.authorizeRequests()
+				.antMatchers(HttpMethod.GET, "/producto/**", "/lote/**").hasRole("USER")
+				.antMatchers(HttpMethod.POST, "/producto/**", "/lote/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.PUT, "/producto/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.DELETE, "/producto/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.POST, "/pedido/**").hasAnyRole("USER","ADMIN")
+				.anyRequest().authenticated();
+		http.addFilterBefore(null, UsernamePasswordAuthenticationFilter.class);
+	}
+}
+```
+Hemos añadido el bean _AuthenticationManager_, que luego podamos tomar en el filtro. Además, en el método _configure(HttpSecurity http)_
+añadimos al final del mismo, el filtro, que declararemos más adelante. Por lo demás la clase de seguridad queda exactamente igual.
+
+#### Customización del AutenticationEntryPoint.
+Vamos a moficar el _AutenticationEntryPoint_, que devolverá en los errores 401.
+
+```
+@Component
+@RequiredArgsConstructor
+public class CustomBasicAuthenticationEntryPoint extends BasicAuthenticationEntryPoint {
+
+	private final ObjectMapper mapper;
+	
+	@Override
+	public void commence(HttpServletRequest request, HttpServletResponse response,
+			AuthenticationException authException) throws IOException, ServletException {
+		response.addHeader("WWW-Authenticate", "Basic realm='" + getRealmName() + "'");
+		response.setContentType("application/json");
+		response.setStatus(HttpStatus.UNAUTHORIZED.value());		
+		
+		ApiError apiError = new ApiError(HttpStatus.UNAUTHORIZED, authException.getMessage());
+		String strApiError = mapper.writeValueAsString(apiError);
+		
+		PrintWriter writer = response.getWriter();
+		writer.println(strApiError);
+	}
+
+	@PostConstruct
+	public void initRealname() {
+		setRealmName("openwebinars.net");
+	}
+}
+```
+
+El esquema es similar. En este caso la diferencia es que hereda de _BasicAuthenticationEntryPoint_ . Habría que implementarlo también
+en nuestra configuración de seguridad, para que devuelva ese entry point cuando un usuario no esté autorizado.
+```
+@Configuration
+@EnableWebSecurity
+@RequiredArgsConstructor
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+	
+	private final CustomBasicAuthenticationEntryPoint customBasicAuthenticationEntryPoint;
+	private final UserDetailsService userDetailsService;
+	private final PasswordEncoder passwordEncoder;
+	private final AccessDeniedHandler accessDeniedHandler;
+
+	@Override
+	protected void configure(AuthenticationManagerBuilder auth) throws Exception {
+		auth.userDetailsService(userDetailsService).passwordEncoder(passwordEncoder);
+	}
+
+	@Override
+	protected void configure(HttpSecurity http) throws Exception {
+		http
+			.httpBasic()
+			.authenticationEntryPoint(customBasicAuthenticationEntryPoint)
+			.and()
+			.authorizeRequests()
+				.antMatchers(HttpMethod.GET, "/producto/**", "/lote/**").hasRole("USER")
+				.antMatchers(HttpMethod.POST, "/producto/**", "/lote/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.PUT, "/producto/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.DELETE, "/producto/**").hasRole("ADMIN")
+				.antMatchers(HttpMethod.POST, "/pedido/**").hasAnyRole("USER","ADMIN")
+				.anyRequest().authenticated()
+			.and()
+				.csrf().disable();
+		
+		http.exceptionHandling()
+			.accessDeniedHandler(accessDeniedHandler);
+		
+	}
+}
+```
+
+
+
+
+
+
+
+
+
