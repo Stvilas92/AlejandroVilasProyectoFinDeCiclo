@@ -3862,8 +3862,776 @@ public class SecurityConfig extends WebSecurityConfigurerAdapter {
 }
 ```
 
+## 10/05/2020
+Hoy vamos a finalizar el _Curso de seguridad con en tu API REST con Spring Boot_ ,y ,con el curso, la carrera de _Curso de desarrollador de 
+Spring_.
+
+#### Modelo de usuario y UsersDetailService
+En cuanto al modelo de usuarios nos sirve el del proyecto base. Más adelante puede que necesitemos un DTO a la hora de hacer un login.
+Nuestro filtro necesitará buscar usuarios por id, y para ello modificaremos la implemetación de _UsersDeatilService_, que hemos hecho
+con _CustomUsersDetailService_ .
+```
+@Service("userDetailsService")
+@RequiredArgsConstructor
+public class CustomUserDetailsService implements UserDetailsService{
+
+	private final UserEntityService userEntityService;
+	
+	@Override
+	public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
+		return userEntityService.findUserByUsername(username)
+					.orElseThrow(()-> new UsernameNotFoundException(username + " no encontrado"));
+	}
+	
+	public UserDetails loadUserById(Long id) throws UsernameNotFoundException {
+		return userEntityService.findById(id)
+				.orElseThrow(()-> new UsernameNotFoundException("Usuario con ID: " + id + " no encontrado"));
+	}
+}
+```
+
+#### Manejo del token JWT
+Vamos a crear un _JWTProvider_ que se encargará de:
+- Generar un token usando _Autentication_.
+- Obtener el ID de usuario a partir del payload de un token.
+- Verificar si el token si es válido.
+Utilizaremos la librería _JWTBuilder_
+
+```
+@Component
+public class JwtTokenProvider {
+
+	public static final String TOKEN_HEADER = "Authorization";
+	public static final String TOKEN_PREFIX = "Bearer ";
+	public static final String TOKEN_TYPE = "JWT";
+
+	@Value("${jwt.secret:EnUnLugarDeLaManchaDeCuyoNombreNoQuieroAcordarmeNoHaMuchoTiempoQueViviaUnHidalgo}")
+	private String jwtSecreto;
+
+	@Value("${jwt.token-expiration:86400}")
+	private int jwtDuracionTokenEnSegundos;
+
+	public String generateToken(Authentication authentication) {
+		
+		UserEntity user = (UserEntity) authentication.getPrincipal();
+		
+		Date tokenExpirationDate = new Date(System.currentTimeMillis() + (jwtDuracionTokenEnSegundos * 1000));
+		
+		return Jwts.builder()
+				.signWith(Keys.hmacShaKeyFor(jwtSecreto.getBytes()), SignatureAlgorithm.HS512)
+				.setHeaderParam("typ", TOKEN_TYPE)
+				.setSubject(Long.toString(user.getId()))
+				.setIssuedAt(new Date())
+				.setExpiration(tokenExpirationDate)
+				.claim("fullname", user.getFullName())
+				.claim("roles", user.getRoles().stream()
+								.map(UserRole::name)
+								.collect(Collectors.joining(", "))
+						)
+				.compact();
+	}
+	
+	
+	public Long getUserIdFromJWT(String token) {
+		Claims claims = Jwts.parser()
+							.setSigningKey(Keys.hmacShaKeyFor(jwtSecreto.getBytes()))
+							.parseClaimsJws(token)
+							.getBody();
+		
+		return Long.parseLong(claims.getSubject());
+	}
+	
+	public boolean validateToken(String authToken) {
+		
+		try {
+			Jwts.parser().setSigningKey(jwtSecreto.getBytes()).parseClaimsJws(authToken);
+			return true;
+		} catch (SignatureException ex) {
+			log.info("Error en la firma del token JWT: " + ex.getMessage());
+		} catch (MalformedJwtException ex) {
+			log.info("Token malformado: " + ex.getMessage());
+		} catch (ExpiredJwtException ex) {
+			log.info("El token ha expirado: " + ex.getMessage());
+		} catch (UnsupportedJwtException ex) {
+			log.info("Token JWT no soportado: " + ex.getMessage());
+		} catch (IllegalArgumentException ex) {
+			log.info("JWT claims vacío");
+		}
+        return false;
+		
+		
+		
+	}
+}
+```
+Como podemos ver tenemos tres métodos para trabajar con tokens:
+- _generateToken_ , construye el token con los valores especificados en las propiedades de la clase, y, a través del autentication recibido
+como parámetro.
+- _getUserIdFromJWT_ , obtiene una ID a través de un token.
+- _validateToken_ , valida un token. Puede dar excepciones propias de JWT, como _SignatureException_ , _MalformedJwtException_ o _UnsupportedJwtException_.
+
+#### JWT AuthenticationFilter
+Utilizaremos varias clases:
+- _OncePerRequestFilter_ , clase para que se procese una petición por filtro.
+- _UsernamePasswordAuthenticationToken_ , una representación simple de _Authentication_ solo con usuario y contraseña.
+El algoritmo del  filtro es sencillo :
+1- Extraemos el toke de la petición
+2- Obtenemos el ide de usuario, con ello, el ususario, y, construimos el _Autehntication_.
+3- Establecemos el  _Autehntication_ como contexto de seguridad.
+Si en alguno de los puntos anteriores se produce algún error, el token no pasaría el filtro.
+Creamos la clase _JwtAuthorizationFilter_ , que hereda de _OncePerRequestFilter_ . 
+```
+@Component
+@RequiredArgsConstructor
+public class JwtAuthorizationFilter extends OncePerRequestFilter {
+
+	private final JwtTokenProvider tokenProvider;
+	private final CustomUserDetailsService userDetailsService;
+
+	@Override
+	protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain)
+			throws ServletException, IOException {
+
+		try {
+			String token = getJwtFromRequest(request);
+
+			if (StringUtils.hasText(token) && tokenProvider.validateToken(token)) {
+				Long userId = tokenProvider.getUserIdFromJWT(token);
+
+				UserEntity user = (UserEntity) userDetailsService.loadUserById(userId);
+				UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(user,
+						user.getRoles(), user.getAuthorities());
+				authentication.setDetails(new WebAuthenticationDetails(request));
+
+				SecurityContextHolder.getContext().setAuthentication(authentication);
+
+			}
+		} catch (Exception ex) {
+			log.info("No se ha podido establecer la autenticación de usuario en el contexto de seguridad");
+		}
+
+		filterChain.doFilter(request, response);
+	}
+
+	private String getJwtFromRequest(HttpServletRequest request) {
+		String bearerToken = request.getHeader(JwtTokenProvider.TOKEN_HEADER);
+		if (StringUtils.hasText(bearerToken) && bearerToken.startsWith(JwtTokenProvider.TOKEN_PREFIX)) {
+			return bearerToken.substring(JwtTokenProvider.TOKEN_PREFIX.length(), bearerToken.length());
+		}
+		return null;
+	}
+}
+```
+Haremos también un método auxiliar _getJwtFromRequest_ , el cual se encarga de extraer un token de una petición HTTP, lo valida, y
+lo devuelve para que podamos trabajar con el.
+Como podemos ver, el algoritmo que especificamos se implementa en el método _doFilterInternal_ ,el cual, como explicamos, usa
+_UsernamePasswordAuthenticationToken_ , para trabajar con una autenticación simple con usuario y contraseña.
+Anteriormente habíamos definido en _SecurityConfig_ , una instrucción para que las peticiones HTTP pasasen por un filtro. Ahora que 
+ya definimos el filtro, hay que especificarlo.
+Creamos la propiedad.
+```
+@Autowired
+private JwtAutorizationFilter jwtAutorizationFilter;
+```
+Implementamos su uso
+```
+http.addFilterBefore(jwtAutorizationFilter, UsernamePasswordAuthenticationFilter.class);
+```
 
 
+#### Modelo para el login y respuesta.
+#### Despliegue y prubas con JWT
+Implementaremos el modelo de login y respuesta que luego usaremos en un controlador.
+Vamos a extender de la clase ya creada _GetUserDTO_ , para crear un usuario añadiendole el token, que será nuestra respuesta.
+```
+@Getter
+@Setter
+public class JwtUserResponse extends GetUserDto {
+	
+	private String token;
+	
+	@Builder(builderMethodName="jwtUserResponseBuilder")
+	public JwtUserResponse(String username, String avatar, String fullName, String email, Set<String> roles, String token) {
+		super(username, avatar, fullName, email, roles);
+		this.token = token;
+	}
+}
+```
+
+Para recoger un objeto de petición de login, crearemos un objeto simple con usuario y contraseña, pero que los tenga que implementar si o si.
+```
+@Getter
+@NoArgsConstructor
+public class LoginRequest {
+	@NotBlank
+	private String username;
+	@NotBlank
+	private String password;
+
+}
+```
+
+#### Refractorización del controlador
+Vamos a crear un controlador para hacert el login.
+```
+@RestController
+@RequiredArgsConstructor
+public class AuthenticationController {
+	
+	private final AuthenticationManager authenticationManager;
+	private final JwtTokenProvider tokenProvider;
+	private final UserDtoConverter converter;
+	
+	@PostMapping("/auth/login")
+	public JwtUserResponse login(@Valid @RequestBody LoginRequest loginRequest) {
+		Authentication authentication = 
+				authenticationManager.authenticate(
+					new UsernamePasswordAuthenticationToken(
+							loginRequest.getUsername(),
+							loginRequest.getPassword()
+							
+						)							
+				);
+		
+		SecurityContextHolder.getContext().setAuthentication(authentication);
+		UserEntity user = (UserEntity) authentication.getPrincipal();
+		String jwtToken = tokenProvider.generateToken(authentication);
+		
+		return convertUserEntityAndTokenToJwtUserResponse(user, jwtToken);		
+	}
+	
+	@PreAuthorize("isAuthenticated()")
+	@GetMapping("/user/me")
+	public GetUserDto me(@AuthenticationPrincipal UserEntity user) {
+		return converter.convertUserEntityToGetUserDto(user);
+	}
+	
+	private JwtUserResponse convertUserEntityAndTokenToJwtUserResponse(UserEntity user, String jwtToken) {
+		return JwtUserResponse
+				.jwtUserResponseBuilder()
+				.fullName(user.getFullName())
+				.email(user.getEmail())
+				.username(user.getUsername())
+				.avatar(user.getAvatar())
+				.roles(user.getRoles().stream().map(UserRole::name).collect(Collectors.toSet()))
+				.token(jwtToken)
+				.build();
+	}
+}
+```
+Como podemos ver es un controlador con dos peticiones.
+- _login_ recibe un _loginRequest_ y a través del _AutenticationManager_, crea un _Authentication_ simple a través del usuario y
+contraseña del  _loginRequest_. A través del _Authentication_ creamos un _UserEntity_ y le asignamos un token, el cual usarermos
+para devolver un _JwtUserResponse_.
+- me, le pasamos un _UserEntity_ , el cual ns dice si está autenticado o no.
+
+#### ¿En qué consiste OAuth2?
+Como dijimos anteriormente _OAuth2_ rermite compartir información entre sitios sin compartir identidad, implementando diferentes fujos de 
+autenticación (_autentication code flow_, _resource owner password  credential flow_ etc).  Se definen varios roles, dueño del recurso, 
+cliente, servidor de recursos protegidos, servidor de autorización. El proceso es el siguiente, peticion de autorizacion del cliente , el 
+servidor se la concede, el cliete pide el token de seguridad de un recurso protegido, el servidor se lo da, y, con ese recurso se consigue 
+el recurso protegido.
+Surge de la necesidad de paliar el envio de credenciales entre cliente y servidor. El usuario delega la capacidad de realizar ciertas 
+operaciones en su nombre, y, no tenemos ala necesidad de almacenar usuario y contraseña.
+Cabe espeficicar que OAuth2 es un controlador de acceso , no de autenticación.
+Usada por Twitter o Google cuando usamos aplicaciones de terceros.
+
+#### Roles
+Se definen 4 roles:
+- Dueño del recurso, dueño de la información que se va a manejar.
+- Cliente, la aplicación que desea acceder a la cuenta de ususario, siendo autorizado.
+- Servidor de autorización, responsable de las peticiones de autorización. Autentica mediante tokens de acceso (No son tokens JWT).
+- Servidor de recursos, aloja los recursos protegidos.
+
+#### Flujo abstracto del protocolo
+Es abstracto ya que no hay un único flujo en el protocolo. Normalmente se hacen 7 pasos.
+1- Petición de autenticación.
+2- El servidor de autenticación, nos identifica (login u otros métodos). El usuario debe dar el consentimiento (permisos) de lo que la
+aplicación quiere hacer.
+3- Se devuelve un código de autorización. (Incluye consentimientos).
+4- Con ese código, solicitamos un token al servidor de autorización.
+5- Se devuelve un token de acceso.
+6- Solicitud de recurso protegido utilizando un token.
+7- Respuesta del servidor con los recursos solicitados.
+- _Scopes_ o ámbitos, consentimientos que el usuario concede a la aplicación.
+
+#### Grant Types
+Los _Grant Types_ son las diferentes formas de obtener un token.
+Dos tipos;
+- Clientes confidenciales. Capaces de guardar contraseñas sin que sean expuestas.
+- Clientes públicos. No soncapaces de guardar contraseñas y mantenerlas a salvo.
+
+Los _Grant Types_ que vamos a utilizar son:
+- Authorization code, mismo flujo que el fujo abstrcto visto anteriormente. Es el más completo. Utilizado en clientes confidenciales. El
+token se obtiene a partir de un código(repsuesta) pasandole como parametros un id, una url de redirección y los scopes.
+- Implicit, usado en clientes públicos. Es lo mismo que el anterior pero recibe un token en vez de un código.
+- Password, usado cuendo no haya otra alternativa de flujo. Se hace en aplicaciones que tienen la confianza de sus clientes. Solo se le
+pasa usuario y contraseña y se recibe un token.
+
+#### Implementando el servidor de autorización
+Para implementarlo hay que primero incorporar su dependencia.
+```
+<dependency>
+    <groupId>org.springframework.security.oauth.boot</groupId>    <artifactId>spring-security-oauth2-autoconfigure</artifactId>
+    <version>2.X.Y.RELEASE</version>
+</dependency>
+```
+Vamos a ahacer la primera parte del proceso. Petición de autorizaciones y concesiones de tokens (Pasos 1-5).
+El servidor de autorización extenderá de _AuthorizationServerConfigurerAdapter_, y vamoa a configurar:
+- Clientes y sus características.
+- Seguridad del token.
+- Conexión con el modelo de autorización.
+El proyecto base será el mismo proyecto base que hemos utilizado para implemntar los otros dos proyectos de las ditintas formas de 
+seguridad del curso (Básica y JWT).
+Procedemos a crear el servidor de autorización.
+```@Configuration
+@EnableAuthorizationServer
+@RequiredArgsConstructor
+public class OAuth2AuthorizationServer extends AuthorizationServerConfigurerAdapter{
+
+	private final PasswordEncoder passwordEncoder;
+	private final AuthenticationManager authenticationManager;
+	private final UserDetailsService userDetailsService;
+	
+	@Value("${oauth2.client-id}")
+	private String clientId;
+	
+	@Value("${oauth2.client-secret}")
+	private String clientSecret;
+	
+	@Value("${oauth2.redirect-uri}")
+	private String redirectUri;
+	
+	@Value("${oauth2.access-token-validity-seconds}")
+	private int accessTokenValiditySeconds;
+	
+	@Value("${oauth2.access-token-validity-seconds}")
+	private int refreshTokenValiditySeconds;
+
+	private static final String CODE_GRANT_TYPE = "authorization_code";
+	private static final String IMPLICIT_GRANT_TYPE = "implicit";
+	private static final String PASS_GRANT_TYPE = "password";
+	private static final String REFRESH_TOKEN_GRANT_TYPE = "refresh_token";
+
+	@Override
+	public void configure(AuthorizationServerSecurityConfigurer security) throws Exception {
+		security
+			.tokenKeyAccess("permitAll()")
+			.checkTokenAccess("isAuthenticated()")
+			.allowFormAuthenticationForClients();
+	}
+
+	@Override
+	public void configure(ClientDetailsServiceConfigurer clients) throws Exception {
+		clients
+			.inMemory()
+			.withClient(clientId)
+			.secret(passwordEncoder.encode(clientSecret))
+			.authorizedGrantTypes(PASS_GRANT_TYPE, REFRESH_TOKEN_GRANT_TYPE, IMPLICIT_GRANT_TYPE, CODE_GRANT_TYPE)
+			.authorities("READ_ONLY_CLIENT")
+			.scopes("read")
+			.resourceIds("oauth2-resource")
+			.redirectUris(redirectUri)
+			.accessTokenValiditySeconds(accessTokenValiditySeconds)
+			.refreshTokenValiditySeconds(refreshTokenValiditySeconds);
+			
+	
+	}
+
+	@Override
+	public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
+		endpoints.authenticationManager(authenticationManager).userDetailsService(userDetailsService);
+	}	
+}
+```
+Hemos configurado las propiedades(desde el fichero properties), _clientId_, _clientSecret_, _redirectUri_, _accessTokenValiditySeconds_ y
+_refreshTokenValiditySeconds_, que usaremos para constuir y validar el token. Las propiedades las definimos en _application.properties_.
+```
+oauth2.client-id=cliente
+oauth2.client-secret=123456
+oauth2.redirect-uri=http://localhost:8081/login
+# Un día
+oauth2.access-token-validity-seconds=86400
+# Un día y medio
+oauth2.refresh-token-validity-seconds=129600
+```
+Tenemos difierentes métodos _configure_
+- _ClientDetailsServiceConfigurer_ , para registrar clientes, con sus grant types, secreto y scopes.
+- _AuthorizationServerSecurityConfigurer_ , da permisos a todas las peticiones una vez que estén autenticadas.
+- _AuthorizationServerEndpointsConfigurer_ , crea los endpoints para para acceder al servidor de autorización.
+
+Después de crear el servidor de autorización, tendremos que hacer los siguientes cambios en _SpringSecurity_.
+
+```
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig extends WebSecurityConfigurerAdapter {
+
+	private final PasswordEncoder passwordEncoder;
+	private final UserDetailsService userDetailsService;
+	
+    @Override
+    protected void configure(HttpSecurity http) throws Exception {
+        http.requestMatchers()
+          .antMatchers("/login", "/oauth/authorize")
+          .and()
+          .authorizeRequests()
+          .anyRequest().authenticated()
+          .and()
+          .formLogin().permitAll();
+    }
+ 
+    @Override
+    protected void configure(AuthenticationManagerBuilder auth) throws Exception {    	
+    	auth.userDetailsService(userDetailsService).passwordEncoder(passwordEncoder);
+    }
+
+    @Bean(BeanIds.AUTHENTICATION_MANAGER)
+    @Override
+	public AuthenticationManager authenticationManagerBean() throws Exception {
+		return super.authenticationManagerBean();
+	}
+}
+```
+
+En _configure(HttpSecurity http)_ ponemos el endpoint del servidor de autorización que por defecto, la librería OAuth2 lo crea en 
+_/oauth/authorize_.
+
+#### Implementando el servidor de recursos
+Se centrará en enviar el token y recibir el recurso.
+```
+@Configuration
+@EnableResourceServer
+public class OAuth2ResourceServer extends ResourceServerConfigurerAdapter {
+
+	@Override
+	public void configure(ResourceServerSecurityConfigurer resources) throws Exception {
+		resources.resourceId("oauth2-resource");
+	}
+
+	@Override
+	public void configure(HttpSecurity http) throws Exception {
+
+		http
+		.csrf()
+			.disable()
+		.sessionManagement()
+			.sessionCreationPolicy(SessionCreationPolicy.STATELESS)
+		.and()
+		.authorizeRequests()
+			//.antMatchers(HttpMethod.POST, "/oauth/token").permitAll()
+			.antMatchers(HttpMethod.GET, "/producto/**", "/lote/**").hasRole("USER")
+			.antMatchers(HttpMethod.POST, "/producto/**", "/lote/**").hasRole("ADMIN")
+			.antMatchers(HttpMethod.PUT, "/producto/**").hasRole("ADMIN")
+			.antMatchers(HttpMethod.DELETE, "/producto/**").hasRole("ADMIN")
+			.antMatchers(HttpMethod.POST, "/pedido/**").hasAnyRole("USER","ADMIN")
+			.anyRequest().authenticated();
+
+	
+	}
+}
+```
+En _configure(HttpSecurity http)_ configuramos el servidor, donde le espicificamos que no cree sesiones y deshabilite CSRF.
+Después ñe indicamos, como en los dos proyectos anteriores, a los endpoints que puede acceder como _USER_ y como _ADMIN_.
+
+#### Reconfigurando CORS Despliegue y prueba de ejecución
+Vamos a eliminar la configuración heredada. Crearemos un filtro y le daremos prioridad.
+Se creará un clase _SimpleCORSFilter_  y le damoa la prioridad más alta con el tag _@Order_.
+
+```
+@Component
+@Order(Ordered.HIGHEST_PRECEDENCE)
+public class SimpleCorsFilter implements Filter {
+
+    @Override
+    public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain) throws IOException, ServletException {
+        final HttpServletResponse response = (HttpServletResponse) res;
+        response.setHeader("Access-Control-Allow-Origin", "*");
+        response.setHeader("Access-Control-Allow-Methods", "POST, PUT, GET, OPTIONS, DELETE");
+        response.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+        response.setHeader("Access-Control-Max-Age", "3600");
+        if (HttpMethod.OPTIONS.name().equalsIgnoreCase(((HttpServletRequest) req).getMethod())) {
+            response.setStatus(HttpServletResponse.SC_OK);
+        } else {
+            chain.doFilter(req, res);
+        }
+    }
+
+    @Override
+    public void destroy() {
+    }
+
+    @Override
+    public void init(FilterConfig config) throws ServletException {
+    }
+}
+```
+Definimos.
+- Acceso a todos los endpoints
+- Acceso a alos métodos POST, PUT, GET, OPTIONS, DELETE
+- Cabeceras con Content-Type
+- Máxima duración de 3600 segundos por pétición
+Por último en la clase _SecurityConfig_ , donde deshabilitamos CSRF, habilitamos CORS.
+```
+http.cors().and().csrf().disable()
+```
+
+#### Tokens en base de datos
+Hasta ahora se han almacenado los tokens en memoria. La propia Srping Secutity OAuth2, en su pagina nos provee con el siguiente esquema
+que podemos copiar y pegar tal cual, ya que es el que usaremos.
+```
+-- used in tests that use HSQL
+create table oauth_client_details (
+  client_id VARCHAR(256) PRIMARY KEY,
+  resource_ids VARCHAR(256),
+  client_secret VARCHAR(256),
+  scope VARCHAR(256),
+  authorized_grant_types VARCHAR(256),
+  web_server_redirect_uri VARCHAR(256),
+  authorities VARCHAR(256),
+  access_token_validity INTEGER,
+  refresh_token_validity INTEGER,
+  additional_information VARCHAR(4096),
+  autoapprove VARCHAR(256)
+);
+
+create table oauth_client_token (
+  token_id VARCHAR(256),
+  token LONGVARBINARY,
+  authentication_id VARCHAR(256) PRIMARY KEY,
+  user_name VARCHAR(256),
+  client_id VARCHAR(256)
+);
+
+create table oauth_access_token (
+  token_id VARCHAR(256),
+  token LONGVARBINARY,
+  authentication_id VARCHAR(256) PRIMARY KEY,
+  user_name VARCHAR(256),
+  client_id VARCHAR(256),
+  authentication LONGVARBINARY,
+  refresh_token VARCHAR(256)
+);
+
+create table oauth_refresh_token (
+  token_id VARCHAR(256),
+  token LONGVARBINARY,
+  authentication LONGVARBINARY
+);
+
+create table oauth_code (
+  code VARCHAR(256), authentication LONGVARBINARY
+);
+
+create table oauth_approvals (
+    userId VARCHAR(256),
+    clientId VARCHAR(256),
+    scope VARCHAR(256),
+    status VARCHAR(10),
+    expiresAt TIMESTAMP,
+    lastModifiedAt TIMESTAMP
+);
+
+
+-- customized oauth_client_details table
+create table ClientDetails (
+  appId VARCHAR(256) PRIMARY KEY,
+  resourceIds VARCHAR(256),
+  appSecret VARCHAR(256),
+  scope VARCHAR(256),
+  grantTypes VARCHAR(256),
+  redirectUrl VARCHAR(256),
+  authorities VARCHAR(256),
+  access_token_validity INTEGER,
+  refresh_token_validity INTEGER,
+  additionalInformation VARCHAR(4096),
+  autoApproveScopes VARCHAR(256)
+);
+```
+Para poder trabajar con bases de datos, vamos a habilitar H2 , utlizado anteriormente con _Spring Data_.
+Para configurar la base de datos, añadimos las properties propias de hibernate.
+```
+# Subida de ficheros
+upload.root-location=upload-dir
+spring.jackson.mapper.default-view-inclusion=true
+spring.jpa.show-sql=true
+spring.datasource.url=jdbc:h2:./db/basededatos
+spring.datasource.username=sa
+spring.datasource.password=
+spring.jpa.hibernate.ddl-auto=create-drop
+spring.h2.console.enabled=true
+```
+En el servidor de autenticación creamos un data source para almacenar los tokens de los clientes en bases de datos mediante JDBC. Y
+creamos un bean para poder manejar los tokens almacenados.
+```
+@Configuration
+@EnableAuthorizationServer
+@RequiredArgsConstructor
+public class OAuth2AuthorizationServer extends AuthorizationServerConfigurerAdapter{
+
+	private final PasswordEncoder passwordEncoder;
+	private final AuthenticationManager authenticationManager;
+	private final UserDetailsService userDetailsService;
+	private final DataSource dataSource;
+	
+	@Value("${oauth2.client-id}")
+	private String clientId;
+	
+	@Value("${oauth2.client-secret}")
+	private String clientSecret;
+	
+	@Value("${oauth2.redirect-uri}")
+	private String redirectUri;
+	
+	@Value("${oauth2.access-token-validity-seconds}")
+	private int accessTokenValiditySeconds;
+	
+	@Value("${oauth2.access-token-validity-seconds}")
+	private int refreshTokenValiditySeconds;
+	
+	
+
+	
+	private static final String CODE_GRANT_TYPE = "authorization_code";
+	private static final String IMPLICIT_GRANT_TYPE = "implicit";
+	private static final String PASS_GRANT_TYPE = "password";
+	private static final String REFRESH_TOKEN_GRANT_TYPE = "refresh_token";
+	
+	@Override
+	public void configure(AuthorizationServerSecurityConfigurer security) throws Exception {
+		security
+			.tokenKeyAccess("permitAll()")
+			.checkTokenAccess("isAuthenticated()")
+			.allowFormAuthenticationForClients();
+
+	}
+
+	@Override
+	public void configure(ClientDetailsServiceConfigurer clients) throws Exception {
+		clients
+			//.inMemory()
+			.jdbc(dataSource)
+			.withClient(clientId)
+			.secret(passwordEncoder.encode(clientSecret))
+			.authorizedGrantTypes(PASS_GRANT_TYPE, REFRESH_TOKEN_GRANT_TYPE, IMPLICIT_GRANT_TYPE, CODE_GRANT_TYPE)
+			.authorities("READ_ONLY_CLIENT")
+			.scopes("read")
+			.resourceIds("oauth2-resource")
+			.redirectUris(redirectUri)
+			.accessTokenValiditySeconds(accessTokenValiditySeconds)
+			.refreshTokenValiditySeconds(refreshTokenValiditySeconds);
+	}
+
+	@Override
+	public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
+		endpoints
+			.authenticationManager(authenticationManager)
+			.userDetailsService(userDetailsService)
+			.tokenStore(tokenStore());
+	}
+	
+	@Bean
+	public TokenStore tokenStore() {
+		return new JdbcTokenStore(dataSource);
+	}
+}
+```
+Con est el servidor guardará los tokens en base de datos , en las tablas especificadas en el esquema. 
+Podemos cambiar el esquema proporcionado por Spring para adaptarlo a nuestra aplicación, pero no es recomendable. Para ello , es preferible
+hacer nuestro propio esquema
+
+
+
+#### Integrando OAuth2 y JWT
+Vamos a cambiar los tokens de acceso por tokens tipo JWT. 
+Lo haremos mediante la interfaz _JWTAccessTokensConverter_, que transforma un token de accesso en JWT.
+Lo único que hay que hacer es implementar dicha interfaz en el servidor de autorización.
+```
+@Configuration
+@EnableAuthorizationServer
+@RequiredArgsConstructor
+public class OAuth2AuthorizationServer extends AuthorizationServerConfigurerAdapter{
+
+	private final PasswordEncoder passwordEncoder;
+	private final AuthenticationManager authenticationManager;
+	private final UserDetailsService userDetailsService;
+	private final DataSource dataSource;
+	
+	@Value("${oauth2.client-id}")
+	private String clientId;
+	
+	@Value("${oauth2.client-secret}")
+	private String clientSecret;
+	
+	@Value("${oauth2.redirect-uri}")
+	private String redirectUri;
+	
+	@Value("${oauth2.access-token-validity-seconds}")
+	private int accessTokenValiditySeconds;
+	
+	@Value("${oauth2.access-token-validity-seconds}")
+	private int refreshTokenValiditySeconds;
+	
+	
+
+	
+	private static final String CODE_GRANT_TYPE = "authorization_code";
+	private static final String IMPLICIT_GRANT_TYPE = "implicit";
+	private static final String PASS_GRANT_TYPE = "password";
+	private static final String REFRESH_TOKEN_GRANT_TYPE = "refresh_token";
+	
+	
+
+	@Override
+	public void configure(AuthorizationServerSecurityConfigurer security) throws Exception {
+		security
+			.tokenKeyAccess("permitAll()")
+			.checkTokenAccess("isAuthenticated()")
+			.allowFormAuthenticationForClients();
+
+	}
+
+	@Override
+	public void configure(ClientDetailsServiceConfigurer clients) throws Exception {
+		clients
+			.jdbc(dataSource)
+			.withClient(clientId)
+			.secret(passwordEncoder.encode(clientSecret))
+			.authorizedGrantTypes(PASS_GRANT_TYPE, REFRESH_TOKEN_GRANT_TYPE, IMPLICIT_GRANT_TYPE, CODE_GRANT_TYPE)
+			.authorities("READ_ONLY_CLIENT")
+			.scopes("read")
+			.resourceIds("oauth2-resource")
+			.redirectUris(redirectUri)
+			.accessTokenValiditySeconds(accessTokenValiditySeconds)
+			.refreshTokenValiditySeconds(refreshTokenValiditySeconds);
+			
+	
+	}
+
+	@Override
+	public void configure(AuthorizationServerEndpointsConfigurer endpoints) throws Exception {
+		endpoints
+			.authenticationManager(authenticationManager)
+			.userDetailsService(userDetailsService)
+			.tokenStore(tokenStore())
+			.accessTokenConverter(accessTokenConverter());
+	}
+	
+	@Bean
+	public TokenStore tokenStore() {
+		return new JdbcTokenStore(dataSource);
+	}
+	
+	@Bean
+	public AccessTokenConverter accessTokenConverter() {
+		return new JwtAccessTokenConverter();
+	}
+}
+```
+Por último, señalamos el convertidor de tokens en el método _configure(AuthorizationServerEndpointsConfigurer endpoints)_ ,  y, cada 
+vez que usemos un token, el servidor nos lo pasará automáticamente como token de acceso.
+
+Con esto finaliza el _Curso de seguridad con en tu API REST con Spring Boot_, la carrera de _Curso de desarrollador de Spring_.
 
 
 
